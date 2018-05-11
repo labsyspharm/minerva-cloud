@@ -1,0 +1,240 @@
+Parameters:
+  StackPrefix:
+    Type: String
+    Description: Unique prefix used in related stacks for use by export
+  Stage:
+    Type: String
+    Description: Deployment stage
+  ProjectTag:
+    Type: String
+    Description: Project tag
+  BatchAMI:
+    Type: AWS::EC2::Image::Id
+    Description: AMI Image ID configured to use specific EFS Volume
+  BatchServiceRole:
+    Type: String
+    Description: Service Role ARN for AWS Batch
+  BatchInstanceRole:
+    Type: String
+    Description: Instance Role ARN for AWS Batch
+  BatchSpotFleetRole:
+    Type: String
+    Description: Spot Fleet Role ARN for AWS Batch
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs for AWS Batch Instances
+
+Resources:
+  BatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${StackPrefix}-${Stage}-BatchRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${StackPrefix}-${Stage}-BatchRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource:
+                  - Fn::ImportValue:
+                      !Sub ${StackPrefix}-${Stage}-S3BucketRawARN
+                  - Fn::ImportValue:
+                      !Sub ${StackPrefix}-${Stage}-S3BucketTileARN
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - Fn::Sub:
+                    - "${S3BucketRawARN}/*"
+                    - S3BucketRawARN:
+                        Fn::ImportValue:
+                          !Sub ${StackPrefix}-${Stage}-S3BucketRawARN
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - Fn::Sub:
+                    - "${S3BucketTileARN}/*"
+                    - S3BucketTileARN:
+                        Fn::ImportValue:
+                          !Sub ${StackPrefix}-${Stage}-S3BucketTileARN
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${StackPrefix}/${Stage}/*"
+
+  # EC2 Compute Environment
+  Ec2Env:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      ComputeEnvironmentName: !Sub ${StackPrefix}-${Stage}-ec2
+      ServiceRole: !Ref BatchServiceRole
+      ComputeResources:
+        Type: EC2
+        MinvCpus: 0
+        MaxvCpus: 4
+        DesiredvCpus: 0
+        InstanceRole: !Ref BatchInstanceRole
+        ImageId: !Ref BatchAMI
+        InstanceTypes:
+          - optimal
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub ${StackPrefix}-${Stage}-GeneralSGID
+        Subnets: !Ref Subnets
+        Tags:
+          project: !Ref ProjectTag
+      State: ENABLED
+
+  # Spot Compute Environment
+  SpotEnv:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      ComputeEnvironmentName: !Sub ${StackPrefix}-${Stage}-spot
+      ServiceRole: !Ref BatchServiceRole
+      ComputeResources:
+        Type: SPOT
+        MinvCpus: 0
+        MaxvCpus: 16
+        DesiredvCpus: 0
+        InstanceRole: !Ref BatchInstanceRole
+        ImageId: !Ref BatchAMI
+        InstanceTypes:
+          - optimal
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub ${StackPrefix}-${Stage}-GeneralSGID
+        Subnets: !Ref Subnets
+        Tags:
+          project: !Ref ProjectTag
+        SpotIamFleetRole: !Ref BatchSpotFleetRole
+        BidPercentage: 50
+      State: ENABLED
+
+  # Job Queue
+  JobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub ${StackPrefix}-${Stage}-queue
+      ComputeEnvironmentOrder:
+        - ComputeEnvironment: !Ref SpotEnv
+          Order: 1
+        - ComputeEnvironment: !Ref Ec2Env
+          Order: 2
+      Priority: 10
+
+  # S3 Sync Job Definition
+  SyncJobDef:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      JobDefinitionName: !Sub ${StackPrefix}-${Stage}-sync
+      ContainerProperties:
+        Environment:
+          - Name: STACKPREFIX
+            Value: !Ref StackPrefix
+          - Name: STAGE
+            Value: !Ref Stage
+        MountPoints:
+          - ReadOnly: false
+            SourceVolume: efs
+            ContainerPath: /tmp/aws
+        Volumes:
+          - Host:
+              SourcePath: /mnt/efs
+            Name: efs
+        Command:
+          - s3
+          - sync
+          - Ref::s3uri
+          - Ref::dir
+        Memory: 128
+        JobRoleArn: !GetAtt BatchRole.Arn
+        Vcpus: 1
+        Image: sorgerlab/awscli:latest
+      RetryStrategy:
+        Attempts: 2
+
+  # Bio-Formats Scan Job Definition
+  BFScanJobDef:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      JobDefinitionName: !Sub ${StackPrefix}-${Stage}-bfscan
+      ContainerProperties:
+        Environment:
+          - Name: STACKPREFIX
+            Value: !Ref StackPrefix
+          - Name: STAGE
+            Value: !Ref Stage
+        MountPoints:
+          - ReadOnly: false
+            SourceVolume: efs
+            ContainerPath: /tmp/aws
+        Volumes:
+          - Host:
+              SourcePath: /mnt/efs
+            Name: efs
+        Command:
+          - Ref::dir
+        Memory: 512
+        JobRoleArn: !GetAtt BatchRole.Arn
+        Vcpus: 1
+        Image: sorgerlab/bfscanner:latest
+      RetryStrategy:
+        Attempts: 2
+
+  # SSM
+  JobQueueARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/batch/JobQueueARN
+      Description: Job Queue ARN
+      Type: String
+      Value: !Ref JobQueue
+
+  SyncJobDefinitionARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/batch/SyncJobDefinitionARN
+      Description: Sync Job Definition ARN
+      Type: String
+      Value: !Ref SyncJobDef
+
+  BFScanJobDefinitionARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/batch/BFScanJobDefinitionARN
+      Description: Bio-Formats Scan Job Definition ARN
+      Type: String
+      Value: !Ref BFScanJobDef
+
+Outputs:
+  JobQueueARN:
+    Description: Job Queue ARN
+    Value: !Ref JobQueue
+    Export:
+      Name: !Sub ${StackPrefix}-${Stage}-batch-JobQueueARN
+  SyncJobDefinitionARN:
+    Description: Sync Job Definition ARN
+    Value: !Ref SyncJobDef
+    Export:
+      Name: !Sub ${StackPrefix}-${Stage}-batch-SyncJobDefinitionARN
+  BFScanJobDefinitionARN:
+    Description: Bio-Formats Scan Job Definition ARN
+    Value: !Ref BFScanJobDef
+    Export:
+      Name: !Sub ${StackPrefix}-${Stage}-batch-BFScanJobDefinitionARN

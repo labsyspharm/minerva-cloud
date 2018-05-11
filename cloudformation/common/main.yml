@@ -1,0 +1,161 @@
+Parameters:
+  StackPrefix:
+    Type: String
+    Description: Unique prefix used in related stacks for use by export
+  Stage:
+    Type: String
+    Description: Deployment stage
+  ProjectTag:
+    Type: String
+    Description: Project tag
+  # Due to the awkward way in which mount targets are constructed there must be
+  # exactly six subnets
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs for AWS Batch Instances. Must be exactly six!
+
+Resources:
+  # Some of these may warrant their own stack (or potentially be a sub-stack)
+  # ServiceRole for Batch
+  # InstanceRole for Batch
+  # SpotFleetRole for Batch
+
+  RawBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
+
+  TileBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
+
+  GeneralSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub General Security Group for ${StackPrefix}-${Stage}
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
+
+  GeneralSGIngressSelf:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt GeneralSG.GroupId
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt GeneralSG.GroupId
+
+  EFSVolume:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      FileSystemTags:
+        - Key: project
+          Value: !Ref ProjectTag
+      PerformanceMode: maxIO
+
+  EFSMountTarget0:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSVolume
+      SecurityGroups:
+        - !GetAtt GeneralSG.GroupId
+      SubnetId: !Select [0, !Ref Subnets]
+
+  EFSMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSVolume
+      SecurityGroups:
+        - !GetAtt GeneralSG.GroupId
+      SubnetId: !Select [1, !Ref Subnets]
+
+  EFSMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSVolume
+      SecurityGroups:
+        - !GetAtt GeneralSG.GroupId
+      SubnetId: !Select [2, !Ref Subnets]
+
+  EFSMountTarget3:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSVolume
+      SecurityGroups:
+        - !GetAtt GeneralSG.GroupId
+      SubnetId: !Select [3, !Ref Subnets]
+
+  EFSMountTarget4:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSVolume
+      SecurityGroups:
+        - !GetAtt GeneralSG.GroupId
+      SubnetId: !Select [4, !Ref Subnets]
+
+  EFSMountTarget5:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSVolume
+      SecurityGroups:
+        - !GetAtt GeneralSG.GroupId
+      SubnetId: !Select [5, !Ref Subnets]
+
+  # SSM
+  EFSID:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/EFSID
+      Description: EFS ID
+      Type: String
+      Value: !Ref EFSVolume
+
+  S3BucketRawARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/S3BucketRawARN
+      Description: S3 Bucket ARN for raw data
+      Type: String
+      Value: !GetAtt RawBucket.Arn
+
+  S3BucketTileARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/S3BucketTileARN
+      Description: S3 Bucket ARN for tile data
+      Type: String
+      Value: !GetAtt TileBucket.Arn
+
+  GeneralSGID:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/GeneralSGID
+      Description: General Security Group ID
+      Type: String
+      Value: !GetAtt GeneralSG.GroupId
+
+Outputs:
+  EFSID:
+    Description: EFS ID
+    Value: !Ref EFSVolume
+    Export:
+      Name: !Sub ${StackPrefix}-${Stage}-EFSID
+  S3BucketRawARN:
+    Description: S3 Bucket ARN for raw data
+    Value: !GetAtt RawBucket.Arn
+    Export:
+      Name: !Sub ${StackPrefix}-${Stage}-S3BucketRawARN
+  S3BucketTileARN:
+    Description: S3 Bucket ARN for tile data
+    Value: !GetAtt TileBucket.Arn
+    Export:
+      Name: !Sub ${StackPrefix}-${Stage}-S3BucketTileARN
+  GeneralSGID:
+    Description: General Security Group ID
+    Value: !GetAtt GeneralSG.GroupId
+    Export:
+      Name: !Sub ${StackPrefix}-${Stage}-GeneralSGID
