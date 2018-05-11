@@ -1,0 +1,4 @@
+boto3==1.7.4
+numpy
+opencv-python
+git+https://github.com/sorgerlab/minerva-lib-python#egg=minerva-lib

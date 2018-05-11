@@ -1,0 +1,188 @@
+service: minerva-test
+
+provider:
+  name: aws
+  runtime: python3.6
+  iamRoleStatements:
+      -  Effect: Allow
+         Action:
+           - batch:DescribeJobs
+           - batch:SubmitJob
+         Resource: "*"
+      - Effect: Allow
+        Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+        Resource: "*"
+
+# TODO Some of these do not need the prefix and stage, but the way the files are
+# organised forces this if the SSM parameters are to be read during the init
+functions:
+  submitSyncJob:
+    handler: s3_sync.submit_job
+    environment:
+      STACK_PREFIX: ${self:service}
+      STAGE: ${opt:stage}
+
+  checkStatusSyncJob:
+    handler: s3_sync.check_status_job
+    environment:
+      STACK_PREFIX: ${self:service}
+      STAGE: ${opt:stage}
+
+  submitBFScanJob:
+    handler: bf_scan.submit_job
+    environment:
+      STACK_PREFIX: ${self:service}
+      STAGE: ${opt:stage}
+
+  checkStatusBFScanJob:
+    handler: bf_scan.check_status_job
+    environment:
+      STACK_PREFIX: ${self:service}
+      STAGE: ${opt:stage}
+
+  submitBFExtractJob:
+    handler: bf_extract.submit_job
+    environment:
+      STACK_PREFIX: ${self:service}
+      STAGE: ${opt:stage}
+
+  checkStatusBFExtractJob:
+    handler: bf_extract.check_status_job
+    environment:
+      STACK_PREFIX: ${self:service}
+      STAGE: ${opt:stage}
+
+  writeEvent:
+    handler: test_handler.write_event
+
+stepFunctions:
+  stateMachines:
+    S3EFSSyncSM:
+      definition:
+        Comment: Complete workflow of syncing data from S3 to EFS
+        StartAt: SubmitJob
+        States:
+          SubmitJob:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-submitSyncJob
+            ResultPath: $.jobId
+            Next: Wait30
+          Wait30:
+            Type: Wait
+            Seconds: 30
+            Next: GetJobStatus
+          GetJobStatus:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusSyncJob
+            InputPath: $.jobId
+            ResultPath: $.status
+            Next: IsJobComplete
+          IsJobComplete:
+            Type: Choice
+            Choices:
+              - Variable: $.status
+                StringEquals: FAILED
+                Next: JobFailed
+              - Variable: $.status
+                StringEquals: SUCCEEDED
+                Next: GetFinalJobStatus
+            Default: Wait30
+          JobFailed:
+            Type: Fail
+            Cause: S3 Sync Batch Job Failed
+            Error: DescribeJob returned FAILED
+          GetFinalJobStatus:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusSyncJob
+            InputPath: $.jobId
+            End: true
+
+    BFScanSM:
+      definition:
+        Comment: Complete worlflow of scanning data in EFS with Bio-Formats
+        StartAt: SubmitJob
+        States:
+          SubmitJob:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-submitBFScanJob
+            ResultPath: $.jobId
+            Next: Wait30
+          Wait30:
+            Type: Wait
+            Seconds: 30
+            Next: GetJobStatus
+          GetJobStatus:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusBFScanJob
+            InputPath: $.jobId
+            ResultPath: $.status
+            Next: IsJobComplete
+          IsJobComplete:
+            Type: Choice
+            Choices:
+              - Variable: $.status
+                StringEquals: FAILED
+                Next: JobFailed
+              - Variable: $.status
+                StringEquals: SUCCEEDED
+                Next: GetFinalJobStatus
+            Default: Wait30
+          JobFailed:
+            Type: Fail
+            Cause: Bioformats Scan Job Failed
+            Error: DescribeJob returned FAILED
+          GetFinalJobStatus:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusBFScanJob
+            InputPath: $.jobId
+            End: true
+
+resources:
+  Resources:
+    LambdaWriteEventARN:
+      Type: AWS::SSM::Parameter
+      Properties:
+        Name: /${self:service}/${opt:stage}/batch/LambdaWriteEvent
+        Description: ARN of lambda function to write an event
+        Type: String
+        Value:
+          Fn::GetAtt:
+            - WriteEventLambdaFunction
+            - Arn
+
+    S3EFSSyncStepARN:
+      Type: AWS::SSM::Parameter
+      Properties:
+        Name: /${self:service}/${opt:stage}/batch/S3EFSSyncStepARN
+        Description: ARN of step function for S3 EFS Sync
+        Type: String
+        Value:
+          Ref: S3EFSSyncSMStepFunctionsStateMachine
+
+    BFScanStepARN:
+      Type: AWS::SSM::Parameter
+      Properties:
+        Name: /${self:service}/${opt:stage}/batch/BFScanStepARN
+        Description: ARN of step function for Bio-Formats scan
+        Type: String
+        Value:
+          Ref: BFScanSMStepFunctionsStateMachine
+
+  #
+  # Outputs:
+  #   writeEvent:
+  #     Value:
+  #       Ref: WriteEventLambdaFunction
+  #     Export:
+  #       Name: ${self:service}-${opt:stage}-LambdaWriteEvent
+
+
+plugins:
+  - serverless-python-requirements
+  - serverless-pseudo-parameters
+  - serverless-step-functions
+custom:
+  pythonRequirements:
+    dockerizePip: non-linux

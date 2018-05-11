@@ -1,0 +1,19 @@
+{
+  "name": "minerva-serverless-experiments",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "serverless-python-requirements": "^4.0.0"
+  },
+  "devDependencies": {
+    "serverless-apigw-binary": "^0.4.4",
+    "serverless-apigwy-binary": "^0.1.0",
+    "serverless-step-functions": "^1.4.1"
+  }
+}
