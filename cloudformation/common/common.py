@@ -13,7 +13,7 @@ def main():
     parser.add_argument('configfile', type=argparse.FileType('r'),
                         help='YAML configuration filename')
     parser.add_argument('operation',
-                        choices=['create', 'upgrade', 'delete', 'validate'],
+                        choices=['create', 'update', 'delete', 'validate'],
                         help='Operation')
     args = parser.parse_args()
 
@@ -33,40 +33,56 @@ def main():
     name = '{}-common'.format(prefix)
     project_tag = config['ProjectTag']
     subnets = ','.join(config['Subnets'])
+    neptune_endpoint = config['NeptuneEndpoint']
+    neptune_endpoint_ro = config['NeptuneEndpointRO']
 
     with open('main.yml', 'r') as f:
         template_body = f.read()
 
     if args.operation == 'create':
-        # Create the stack
-        response = cf.create_stack(
-            StackName=name,
-            TemplateBody=template_body,
-            Parameters=[
-                {
-                    'ParameterKey': 'StackPrefix',
-                    'ParameterValue': prefix
-                },
-                {
-                    'ParameterKey': 'Stage',
-                    'ParameterValue': stage
-                },
-                {
-                    'ParameterKey': 'ProjectTag',
-                    'ParameterValue': project_tag
-                },
-                {
-                    'ParameterKey': 'Subnets',
-                    'ParameterValue': subnets
-                }
-            ],
-            Tags=[{
-                'Key': 'project',
-                'Value': project_tag
-            }]
-        )
+        cf_method = cf.create_stack
+    elif args.operation == 'update':
+        cf_method = cf.update_stack
+    else:
+        print('Method not implemented')
+        sys.exit(1)
 
-        print('Stack Created: {}'.format(response['StackId']))
+    response = cf_method(
+        StackName=name,
+        TemplateBody=template_body,
+        Parameters=[
+            {
+                'ParameterKey': 'StackPrefix',
+                'ParameterValue': prefix
+            },
+            {
+                'ParameterKey': 'Stage',
+                'ParameterValue': stage
+            },
+            {
+                'ParameterKey': 'ProjectTag',
+                'ParameterValue': project_tag
+            },
+            {
+                'ParameterKey': 'Subnets',
+                'ParameterValue': subnets
+            },
+            {
+                'ParameterKey': 'NeptuneEndpoint',
+                'ParameterValue': neptune_endpoint
+            },
+            {
+                'ParameterKey': 'NeptuneEndpointRO',
+                'ParameterValue': neptune_endpoint_ro
+            }
+        ],
+        Tags=[{
+            'Key': 'project',
+            'Value': project_tag
+        }]
+    )
+
+    print('Stack {} completed: {}'.format(args.operation, response['StackId']))
 
 
 if __name__ == "__main__":

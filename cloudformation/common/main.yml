@@ -14,6 +14,15 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Subnet IDs for AWS Batch Instances. Must be exactly six!
 
+  # TODO Until Neptune can be deployed as a common resource when it goes GA
+  NeptuneEndpoint:
+    Type: String
+    Description: Endpoint of the neptune server
+
+  NeptuneEndpointRO:
+    Type: String
+    Description: Read only endpoint of the neptune server
+
 Resources:
   # Some of these may warrant their own stack (or potentially be a sub-stack)
   # ServiceRole for Batch
@@ -137,6 +146,23 @@ Resources:
       Description: General Security Group ID
       Type: String
       Value: !GetAtt GeneralSG.GroupId
+
+  NeptuneEndpointHostname:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/NeptuneEndpoint
+      Description: Read only Neptune Endpoint
+      Type: String
+      Value: !Ref NeptuneEndpoint
+
+  NeptuneEndpointROHostname:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/NeptuneEndpointRO
+      Description: Read only Neptune Endpoint
+      Type: String
+      Value: !Ref NeptuneEndpointRO
+
 
 Outputs:
   EFSID:
