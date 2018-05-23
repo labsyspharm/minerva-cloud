@@ -42,6 +42,12 @@ functions:
       STACK_PREFIX: ${self:service}
       STAGE: ${opt:stage}
 
+  registerBFU:
+    handler: bf_extract.register_bfu
+    environment:
+      STACK_PREFIX: ${self:service}
+      STAGE: ${opt:stage}
+
   submitBFExtractJob:
     handler: bf_extract.submit_job
     environment:
@@ -138,6 +144,52 @@ stepFunctions:
             Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusBFScanJob
             InputPath: $.jobId
             End: true
+
+    BFExtractSM:
+      definition:
+        Comment: Complete workflow of extracting data in EFS with Bio-Formats
+        StartAt: RegisterBFU
+        States:
+          RegisterBFU:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-registerBFU
+            ResultPath: $.bfuUuid
+            Next: SubmitJob
+          SubmitJob:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-submitBFExtractJob
+            ResultPath: $.jobId
+            Next: Wait30
+          Wait30:
+            Type: Wait
+            Seconds: 30
+            Next: GetJobStatus
+          GetJobStatus:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusBFExtractJob
+            InputPath: $.jobId
+            ResultPath: $.status
+            Next: IsJobComplete
+          IsJobComplete:
+            Type: Choice
+            Choices:
+              - Variable: $.status
+                StringEquals: FAILED
+                Next: JobFailed
+              - Variable: $.status
+                StringEquals: SUCCEEDED
+                Next: GetFinalJobStatus
+            Default: Wait30
+          JobFailed:
+            Type: Fail
+            Cause: Bioformats Extract Job Failed
+            Error: DescribeJob returned FAILED
+          GetFinalJobStatus:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusBFExtractJob
+            InputPath: $.jobId
+            End: true
+
 
 resources:
   Resources:

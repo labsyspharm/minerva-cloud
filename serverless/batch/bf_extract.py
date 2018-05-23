@@ -24,7 +24,7 @@ def register_bfu(event, context):
     bioformats_reader = event['bioformatsReader']
 
     # Generate a uuid for this BFU
-    bfu_uuid = uuid4()
+    bfu_uuid = str(uuid4())
 
     # Just print details instead of registering in the database for now
     # TODO Write to database
@@ -55,11 +55,19 @@ def submit_job(event, context):
                                                                  STAGE)
         )['Parameter']['Value']
 
+        # Get tile bucket name from ARN
+        bucket = ssm.get_parameter(
+            Name='/{}/{}/common/S3BucketTileARN'.format(STACK_PREFIX,
+                                                        STAGE)
+        )['Parameter']['Value'].split(':')[-1]
+
         # Get parameters
         parameters = {
-            'dir': event['dir'],
-            'files': event['files'],
-            'reader': event['reader']
+            'dir': event['importUuid'],
+            'file': event['fileset'][0],
+            'reader': event['bioformatsReader'],
+            'bfuUuid': event['bfuUuid'],
+            'bucket': bucket
         }
 
         print('Parameters:' + json.dumps(parameters, indent=2))
