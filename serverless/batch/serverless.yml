@@ -1,78 +1,105 @@
-service: minerva-test
+service: minerva-serverless-batch
 
 provider:
   name: aws
   runtime: python3.6
+  vpc:
+    securityGroupIds:
+      - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
+      # TODO From SSM or replace completely, or from minerva-configs?
+      - sg-6ef8c813 # Default VPC for SSM
+    # Private subnets with internet routing
+    # TODO Inject these from minerva-configs
+    subnetIds:
+      - subnet-7f4f8118
+      - subnet-950ecebb
+  deploymentBucket:
+    name: minerva-serverless-deployment
+  environment:
+    # TODO Inject these from minerva-configs
+    STACK_PREFIX: minerva-test
+    STAGE: dev
   iamRoleStatements:
-      -  Effect: Allow
-         Action:
-           - batch:DescribeJobs
-           - batch:SubmitJob
-         Resource: "*"
-      - Effect: Allow
-        Action:
-          - ssm:GetParameter
-          - ssm:GetParameters
-        Resource: "*"
+    - Effect: Allow
+      Action:
+        - batch:DescribeJobs
+        - batch:SubmitJob
+      # TODO Restrict to SSM provided resources (if even possible?)
+      Resource: "*"
+    - Effect: Allow
+      Action:
+        - ssm:GetParameter
+        - ssm:GetParameters
+      Resource: "arn:aws:ssm:#{AWS::Region}:#{AWS::AccountId}:parameter/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/*"
+    - Effect: Allow
+      Action: states:StartExecution
+      Resource: "arn:aws:states:#{AWS::Region}:#{AWS::AccountId}:stateMachine:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-BFScanSM"
+    - Effect: Allow
+      Action: s3:ListBucket
+      Resource: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/S3BucketRawARN}"
+    - Effect: Allow
+      Action:
+        - s3:PutObjectTagging
+        - s3:DeleteObject
+      Resource: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/S3BucketRawARN}/*"
 
-# TODO Some of these do not need the prefix and stage, but the way the files are
-# organised forces this if the SSM parameters are to be read during the init
 functions:
+  addS3ManifestKeysToImport:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-addS3ManifestKeysToImport
+    handler: s3_sync.addS3ManifestKeysToImport
+
   submitSyncJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitSyncJob
     handler: s3_sync.submit_job
-    environment:
-      STACK_PREFIX: ${self:service}
-      STAGE: ${opt:stage}
 
   checkStatusSyncJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusSyncJob
     handler: s3_sync.check_status_job
-    environment:
-      STACK_PREFIX: ${self:service}
-      STAGE: ${opt:stage}
+
+  startScanSFN:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-startScanSFN
+    handler: s3_sync.start_scan_sfn
 
   submitBFScanJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitBFScanJob
     handler: bf_scan.submit_job
-    environment:
-      STACK_PREFIX: ${self:service}
-      STAGE: ${opt:stage}
 
   checkStatusBFScanJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFScanJob
     handler: bf_scan.check_status_job
-    environment:
-      STACK_PREFIX: ${self:service}
-      STAGE: ${opt:stage}
 
   registerBFU:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-registerBFU
     handler: bf_extract.register_bfu
-    environment:
-      STACK_PREFIX: ${self:service}
-      STAGE: ${opt:stage}
 
   submitBFExtractJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitBFExtractJob
     handler: bf_extract.submit_job
-    environment:
-      STACK_PREFIX: ${self:service}
-      STAGE: ${opt:stage}
 
   checkStatusBFExtractJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFExtractJob
     handler: bf_extract.check_status_job
-    environment:
-      STACK_PREFIX: ${self:service}
-      STAGE: ${opt:stage}
 
-  writeEvent:
-    handler: test_handler.write_event
+  handleRawStorageLevel:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-handleRawStorageLevel
+    handler: bf_extract.handle_raw_storage_level
 
 stepFunctions:
   stateMachines:
     S3EFSSyncSM:
+      name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-S3EFSSyncSM
       definition:
         Comment: Complete workflow of syncing data from S3 to EFS
-        StartAt: SubmitJob
+        StartAt: RegisterImportManifest
         States:
+          RegisterImportManifest:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-addS3ManifestKeysToImport
+            ResultPath: null
+            Next: SubmitJob
           SubmitJob:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-submitSyncJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitSyncJob
             ResultPath: $.jobId
             Next: Wait30
           Wait30:
@@ -81,7 +108,7 @@ stepFunctions:
             Next: GetJobStatus
           GetJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusSyncJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusSyncJob
             InputPath: $.jobId
             ResultPath: $.status
             Next: IsJobComplete
@@ -101,18 +128,26 @@ stepFunctions:
             Error: DescribeJob returned FAILED
           GetFinalJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusSyncJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusSyncJob
             InputPath: $.jobId
+            ResultPath: $.status
+            Next: StartScanSFN
+          StartScanSFN:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-startScanSFN
+            InputPath: $.import_uuid
+            ResultPath: $.scanArn
             End: true
 
     BFScanSM:
+      name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-BFScanSM
       definition:
         Comment: Complete worlflow of scanning data in EFS with Bio-Formats
         StartAt: SubmitJob
         States:
           SubmitJob:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-submitBFScanJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitBFScanJob
             ResultPath: $.jobId
             Next: Wait30
           Wait30:
@@ -121,7 +156,7 @@ stepFunctions:
             Next: GetJobStatus
           GetJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusBFScanJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFScanJob
             InputPath: $.jobId
             ResultPath: $.status
             Next: IsJobComplete
@@ -141,23 +176,24 @@ stepFunctions:
             Error: DescribeJob returned FAILED
           GetFinalJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusBFScanJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFScanJob
             InputPath: $.jobId
             End: true
 
     BFExtractSM:
+      name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-BFExtractSM
       definition:
         Comment: Complete workflow of extracting data in EFS with Bio-Formats
         StartAt: RegisterBFU
         States:
           RegisterBFU:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-registerBFU
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-registerBFU
             ResultPath: $.bfuUuid
             Next: SubmitJob
           SubmitJob:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-submitBFExtractJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitBFExtractJob
             ResultPath: $.jobId
             Next: Wait30
           Wait30:
@@ -166,7 +202,7 @@ stepFunctions:
             Next: GetJobStatus
           GetJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusBFExtractJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFExtractJob
             InputPath: $.jobId
             ResultPath: $.status
             Next: IsJobComplete
@@ -178,49 +214,54 @@ stepFunctions:
                 Next: JobFailed
               - Variable: $.status
                 StringEquals: SUCCEEDED
-                Next: GetFinalJobStatus
+                Next: HandleRawStorageLevel
             Default: Wait30
           JobFailed:
             Type: Fail
             Cause: Bioformats Extract Job Failed
             Error: DescribeJob returned FAILED
+          HandleRawStorageLevel:
+            Type: Task
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-handleRawStorageLevel
+            ResultPath: null
+            Next: GetFinalJobStatus
           GetFinalJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-checkStatusBFExtractJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFExtractJob
             InputPath: $.jobId
             End: true
 
 
+
 resources:
   Resources:
-    LambdaWriteEventARN:
-      Type: AWS::SSM::Parameter
-      Properties:
-        Name: /${self:service}/${opt:stage}/batch/LambdaWriteEvent
-        Description: ARN of lambda function to write an event
-        Type: String
-        Value:
-          Fn::GetAtt:
-            - WriteEventLambdaFunction
-            - Arn
 
     S3EFSSyncStepARN:
       Type: AWS::SSM::Parameter
       Properties:
-        Name: /${self:service}/${opt:stage}/batch/S3EFSSyncStepARN
+        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/batch/S3EFSSyncStepARN
         Description: ARN of step function for S3 EFS Sync
         Type: String
         Value:
-          Ref: S3EFSSyncSMStepFunctionsStateMachine
+          Ref: MinervaDashtestDashdevDashS3EFSSyncSM
 
     BFScanStepARN:
       Type: AWS::SSM::Parameter
       Properties:
-        Name: /${self:service}/${opt:stage}/batch/BFScanStepARN
+        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/batch/BFScanStepARN
         Description: ARN of step function for Bio-Formats scan
         Type: String
         Value:
-          Ref: BFScanSMStepFunctionsStateMachine
+          Ref: MinervaDashtestDashdevDashBFScanSM
+
+    BFExtractStepARN:
+      Type: AWS::SSM::Parameter
+      Properties:
+        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/batch/BFExtractStepARN
+        Description: ARN of step function for Bio-Formats extract
+        Type: String
+        Value:
+          Ref: MinervaDashtestDashdevDashBFExtractSM
 
   #
   # Outputs:

@@ -4,7 +4,6 @@ from ruamel.yaml import YAML
 import boto3
 
 yaml = YAML()
-cf = boto3.client('cloudformation')
 
 
 def main():
@@ -24,22 +23,25 @@ def main():
         sys.exit(1)
 
     # Validate the number of subnets
-    if len(config['Subnets']) != 6:
-        print('Exactly 6 subnets required for EFS Stack')
+    if len(config['SubnetsPublic']) != 2:
+        print('Exactly 2 public subnets required')
         sys.exit(1)
 
+    region = config['Region']
     prefix = config['StackPrefix']
     stage = config['Stage']
-    name = '{}-batch'.format(prefix)
+    name = '{}-cf-batch'.format(prefix)
     project_tag = config['ProjectTag']
     ami = config['BatchAMI']
     batch_service_role = config['BatchServiceRole']
     batch_instance_role = config['BatchInstanceRole']
     batch_spot_fleet_role = config['BatchSpotFleetRole']
-    subnets = ','.join(config['Subnets'])
+    subnets_public = ','.join(config['SubnetsPublic'])
 
     with open('main.yml', 'r') as f:
         template_body = f.read()
+
+    cf = boto3.client('cloudformation', region_name=region)
 
     if args.operation == 'create':
         cf_method = cf.create_stack
@@ -82,8 +84,8 @@ def main():
                 'ParameterValue': batch_spot_fleet_role
             },
             {
-                'ParameterKey': 'Subnets',
-                'ParameterValue': subnets
+                'ParameterKey': 'SubnetsPublic',
+                'ParameterValue': subnets_public
             }
         ],
         Capabilities=[

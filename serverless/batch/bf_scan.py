@@ -32,7 +32,7 @@ def submit_job(event, context):
 
         # Get parameters
         parameters = {
-            'dir': event['dir']
+            'dir': event['import_uuid']
         }
 
         print('Parameters:' + json.dumps(parameters, indent=2))

@@ -20,9 +20,9 @@ Parameters:
   BatchSpotFleetRole:
     Type: String
     Description: Spot Fleet Role ARN for AWS Batch
-  Subnets:
+  SubnetsPublic:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: Subnet IDs for AWS Batch Instances
+    Description: Public subnet IDs. Must be exactly two!
 
 Resources:
   BatchRole:
@@ -74,6 +74,12 @@ Resources:
                   - ssm:GetParameters
                 Resource:
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${StackPrefix}/${Stage}/*"
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${StackPrefix}-${Stage}-BFExtractSM"
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${StackPrefix}-${Stage}-setBFUComplete"
 
   # EC2 Compute Environment
   Ec2Env:
@@ -94,7 +100,7 @@ Resources:
         SecurityGroupIds:
           - Fn::ImportValue:
               !Sub ${StackPrefix}-${Stage}-GeneralSGID
-        Subnets: !Ref Subnets
+        Subnets: !Ref SubnetsPublic
         Tags:
           project: !Ref ProjectTag
       State: ENABLED
@@ -118,7 +124,7 @@ Resources:
         SecurityGroupIds:
           - Fn::ImportValue:
               !Sub ${StackPrefix}-${Stage}-GeneralSGID
-        Subnets: !Ref Subnets
+        Subnets: !Ref SubnetsPublic
         Tags:
           project: !Ref ProjectTag
         SpotIamFleetRole: !Ref BatchSpotFleetRole
@@ -162,7 +168,7 @@ Resources:
           - sync
           - Ref::s3uri
           - Ref::dir
-        Memory: 128
+        Memory: 256
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
         Image: sorgerlab/awscli:latest
@@ -210,6 +216,8 @@ Resources:
             Value: !Ref StackPrefix
           - Name: STAGE
             Value: !Ref Stage
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
 
         MountPoints:
           - ReadOnly: false
@@ -224,6 +232,7 @@ Resources:
           - Ref::file
           - Ref::reader
           - Ref::bucket
+          - Ref::bfuUuid
         Memory: 1024
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
