@@ -9,19 +9,19 @@ Parameters:
     Type: String
     Description: Project tag
   # Due to the awkward way in which mount targets are constructed there must be
-  # exactly six subnets
-  Subnets:
+  # exactly two public SubnetsPublic
+  SubnetsPublic:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: Subnet IDs for AWS Batch Instances. Must be exactly six!
+    Description: Public subnet IDs. Must be exactly two!
 
-  # TODO Until Neptune can be deployed as a common resource when it goes GA
-  NeptuneEndpoint:
-    Type: String
-    Description: Endpoint of the neptune server
+  # SubnetsPrivate:
+  #   Type: List<AWS::EC2::Subnet::Id>
+  #   Description: Private subnet IDs. Must be exactly two and be internet routeable!
 
-  NeptuneEndpointRO:
+  # TODO Create the cognito user pool in cloudformation
+  CognitoUserPool:
     Type: String
-    Description: Read only endpoint of the neptune server
+    Description: Cognito User Pool ARN
 
 Resources:
   # Some of these may warrant their own stack (or potentially be a sub-stack)
@@ -32,6 +32,16 @@ Resources:
   RawBucket:
     Type: AWS::S3::Bucket
     Properties:
+      LifecycleConfiguration:
+        Rules:
+          - Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 0
+            TagFilters:
+              - Key: archive
+                Value: "true"
+
       Tags:
         - Key: project
           Value: !Ref ProjectTag
@@ -72,7 +82,7 @@ Resources:
       FileSystemId: !Ref EFSVolume
       SecurityGroups:
         - !GetAtt GeneralSG.GroupId
-      SubnetId: !Select [0, !Ref Subnets]
+      SubnetId: !Select [0, !Ref SubnetsPublic]
 
   EFSMountTarget1:
     Type: AWS::EFS::MountTarget
@@ -80,41 +90,115 @@ Resources:
       FileSystemId: !Ref EFSVolume
       SecurityGroups:
         - !GetAtt GeneralSG.GroupId
-      SubnetId: !Select [1, !Ref Subnets]
+      SubnetId: !Select [1, !Ref SubnetsPublic]
 
-  EFSMountTarget2:
-    Type: AWS::EFS::MountTarget
+  DBParamGroup:
+    Type: AWS::RDS::DBParameterGroup
     Properties:
-      FileSystemId: !Ref EFSVolume
-      SecurityGroups:
-        - !GetAtt GeneralSG.GroupId
-      SubnetId: !Select [2, !Ref Subnets]
+      Description: Database Parameter Group with pg_stat_statements
+      Family: postgres10
+      Parameters:
+        shared_preload_libraries: pg_stat_statements
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
 
-  EFSMountTarget3:
-    Type: AWS::EFS::MountTarget
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
     Properties:
-      FileSystemId: !Ref EFSVolume
-      SecurityGroups:
-        - !GetAtt GeneralSG.GroupId
-      SubnetId: !Select [3, !Ref Subnets]
+      DBSubnetGroupDescription: DB Private Subnet
+      SubnetIds: !Ref SubnetsPublic
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
 
-  EFSMountTarget4:
-    Type: AWS::EFS::MountTarget
+  DB:
+    Type: AWS::RDS::DBInstance
     Properties:
-      FileSystemId: !Ref EFSVolume
-      SecurityGroups:
+      DBName : minerva
+      AllocatedStorage: 20
+      DBInstanceClass: db.t2.micro
+      Engine: postgres
+      EngineVersion: 10.3
+      MasterUsername: minerva
+      MasterUserPassword: 8n#v4DbGOkDb!!47CeDz
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      DBParameterGroupName: !Ref DBParamGroup
+      VPCSecurityGroups:
         - !GetAtt GeneralSG.GroupId
-      SubnetId: !Select [4, !Ref Subnets]
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
+      CopyTagsToSnapshot: true
 
-  EFSMountTarget5:
-    Type: AWS::EFS::MountTarget
+  AssumedS3RoleRead:
+    Type: AWS::IAM::Role
     Properties:
-      FileSystemId: !Ref EFSVolume
-      SecurityGroups:
-        - !GetAtt GeneralSG.GroupId
-      SubnetId: !Select [5, !Ref Subnets]
+      RoleName: !Sub ${StackPrefix}-${Stage}-AssumedS3RoleRead
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: arn:aws:iam::292075781285:root
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${StackPrefix}-${Stage}-AssumedS3RoleReadPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:Get*
+                  - s3:ListBucket
+                  - s3:ListBucketByTags
+                  - s3:ListBucketMultipartUploads
+                  - s3:ListBucketVersions
+                  - s3:ListMultipartUploadParts
+                Resource:
+                  - !GetAtt TileBucket.Arn
+                  - !Sub ${TileBucket.Arn}/*
+
+  AssumedS3RoleWrite:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${StackPrefix}-${Stage}-AssumedS3RoleWrite
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: arn:aws:iam::292075781285:root
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${StackPrefix}-${Stage}-AssumedS3RoleWritePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:Get*
+                  - s3:ListBucket
+                  - s3:ListBucketByTags
+                  - s3:ListBucketMultipartUploads
+                  - s3:ListBucketVersions
+                  - s3:ListMultipartUploadParts
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:AbortMultipartUpload
+                Resource:
+                  - !GetAtt RawBucket.Arn
+                  - !Sub ${RawBucket.Arn}/*
 
   # SSM
+  CognitoUserPoolARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/CognitoUserPoolARN
+      Description: Cognito User Pool ARN
+      Type: String
+      Value: !Ref CognitoUserPool
+
   EFSID:
     Type: AWS::SSM::Parameter
     Properties:
@@ -147,22 +231,61 @@ Resources:
       Type: String
       Value: !GetAtt GeneralSG.GroupId
 
-  NeptuneEndpointHostname:
+  DBHost:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub /${StackPrefix}/${Stage}/common/NeptuneEndpoint
-      Description: Read only Neptune Endpoint
+      Name: !Sub /${StackPrefix}/${Stage}/common/DBHost
+      Description: Database host
       Type: String
-      Value: !Ref NeptuneEndpoint
+      Value: !GetAtt DB.Endpoint.Address
 
-  NeptuneEndpointROHostname:
+  DBPort:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub /${StackPrefix}/${Stage}/common/NeptuneEndpointRO
-      Description: Read only Neptune Endpoint
+      Name: !Sub /${StackPrefix}/${Stage}/common/DBPort
+      Description: Database port
       Type: String
-      Value: !Ref NeptuneEndpointRO
+      Value: !GetAtt DB.Endpoint.Port
 
+  DBName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/DBName
+      Description: Database name
+      Type: String
+      Value: minerva
+
+  DBUser:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/DBUser
+      Description: Username for database
+      Type: String
+      Value: minerva
+
+  DBPassword:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/DBPassword
+      Description: Password for database
+      Type: String
+      Value: 8n#v4DbGOkDb!!47CeDz
+
+  AssumedS3RoleReadARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/AssumedS3RoleReadARN
+      Description: Role ARN for assuming S3 read credentials
+      Type: String
+      Value: !GetAtt AssumedS3RoleRead.Arn
+
+  AssumedS3RoleWriteARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/AssumedS3RoleWriteARN
+      Description: Role ARN for assuming S3 write credentials
+      Type: String
+      Value: !GetAtt AssumedS3RoleWrite.Arn
 
 Outputs:
   EFSID:

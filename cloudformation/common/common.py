@@ -4,7 +4,6 @@ from ruamel.yaml import YAML
 import boto3
 
 yaml = YAML()
-cf = boto3.client('cloudformation')
 
 
 def main():
@@ -24,20 +23,22 @@ def main():
         sys.exit(1)
 
     # Validate the number of subnets
-    if len(config['Subnets']) != 6:
-        print('Exactly 6 subnets required for EFS Stack')
+    if len(config['SubnetsPublic']) != 2:
+        print('Exactly 2 public subnets required')
         sys.exit(1)
 
+    region = config['Region']
     prefix = config['StackPrefix']
     stage = config['Stage']
-    name = '{}-common'.format(prefix)
+    name = '{}-cf-common'.format(prefix)
     project_tag = config['ProjectTag']
-    subnets = ','.join(config['Subnets'])
-    neptune_endpoint = config['NeptuneEndpoint']
-    neptune_endpoint_ro = config['NeptuneEndpointRO']
+    subnets_public = ','.join(config['SubnetsPublic'])
+    cognito_user_pool = config['CognitoUserPool']
 
     with open('main.yml', 'r') as f:
         template_body = f.read()
+
+    cf = boto3.client('cloudformation', region_name=region)
 
     if args.operation == 'create':
         cf_method = cf.create_stack
@@ -64,17 +65,16 @@ def main():
                 'ParameterValue': project_tag
             },
             {
-                'ParameterKey': 'Subnets',
-                'ParameterValue': subnets
+                'ParameterKey': 'SubnetsPublic',
+                'ParameterValue': subnets_public
             },
             {
-                'ParameterKey': 'NeptuneEndpoint',
-                'ParameterValue': neptune_endpoint
-            },
-            {
-                'ParameterKey': 'NeptuneEndpointRO',
-                'ParameterValue': neptune_endpoint_ro
+                'ParameterKey': 'CognitoUserPool',
+                'ParameterValue': cognito_user_pool
             }
+        ],
+        Capabilities=[
+            'CAPABILITY_NAMED_IAM',
         ],
         Tags=[{
             'Key': 'project',
