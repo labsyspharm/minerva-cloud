@@ -34,6 +34,7 @@ def main():
     project_tag = config['ProjectTag']
     subnets_public = ','.join(config['SubnetsPublic'])
     cognito_user_pool = config['CognitoUserPool']
+    database_password = config['DatabasePassword']
 
     with open('main.yml', 'r') as f:
         template_body = f.read()
@@ -71,6 +72,10 @@ def main():
             {
                 'ParameterKey': 'CognitoUserPool',
                 'ParameterValue': cognito_user_pool
+            },
+            {
+                'ParameterKey': 'DatabasePassword',
+                'ParameterValue': database_password
             }
         ],
         Capabilities=[

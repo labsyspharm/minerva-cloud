@@ -23,6 +23,10 @@ Parameters:
     Type: String
     Description: Cognito User Pool ARN
 
+  DatabasePassword:
+    Type: String
+    Description: Database password
+
 Resources:
   # Some of these may warrant their own stack (or potentially be a sub-stack)
   # ServiceRole for Batch
@@ -121,7 +125,7 @@ Resources:
       Engine: postgres
       EngineVersion: 10.3
       MasterUsername: minerva
-      MasterUserPassword: 8n#v4DbGOkDb!!47CeDz
+      MasterUserPassword: !Ref DatabasePassword
       DBSubnetGroupName: !Ref DBSubnetGroup
       DBParameterGroupName: !Ref DBParamGroup
       VPCSecurityGroups:
