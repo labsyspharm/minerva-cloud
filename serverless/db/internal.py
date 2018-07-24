@@ -114,14 +114,12 @@ def _init_db(event, context):
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
 
-    dpwrussell = User('5d948445-b44b-4b2b-ac46-ce2528d56c88',
-                      'dpwrussell',
-                      'dpwrussell@gmail.com')
-    thejohnhoffer = User('b3246536-e3dc-46b1-b4e1-249a89bfbf7a',
-                         'thejohnhoffer',
-                         'john_hoffer@hms.harvard.edu')
-    session.add(dpwrussell)
-    session.add(thejohnhoffer)
+    users = event['users']
+    users = [User(user['sub'],
+                  user['preferred_username'],
+                  user['email'])
+             for user in users]
+    session.add_all(users)
     session.commit()
 
 
