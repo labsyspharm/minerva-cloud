@@ -20,6 +20,27 @@ Parameters:
   BatchSpotFleetRole:
     Type: String
     Description: Spot Fleet Role ARN for AWS Batch
+  BatchClusterEC2MinCpus:
+    Type: String
+    Description: Minimum EC2 cluster size
+  BatchClusterEC2MaxCpus:
+    Type: String
+    Description: Maximum EC2 cluster size
+  BatchClusterEC2DesiredCpus:
+    Type: String
+    Description: Desired EC2 cluster size
+  BatchClusterSpotMinCpus:
+    Type: String
+    Description: Minimum Spot cluster size
+  BatchClusterSpotMaxCpus:
+    Type: String
+    Description: Maximum Spot cluster size
+  BatchClusterSpotDesiredCpus:
+    Type: String
+    Description: Desired Spot cluster size
+  BatchClusterSpotBidPercentage:
+    Type: String
+    Description: Spot cluster maximum bid percentage
   SubnetsPublic:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Public subnet IDs. Must be exactly two!
@@ -90,9 +111,9 @@ Resources:
       ServiceRole: !Ref BatchServiceRole
       ComputeResources:
         Type: EC2
-        MinvCpus: 0
-        MaxvCpus: 4
-        DesiredvCpus: 0
+        MinvCpus: !Ref BatchClusterEC2MinCpus
+        MaxvCpus: !Ref BatchClusterEC2MaxCpus
+        DesiredvCpus: !Ref BatchClusterEC2DesiredCpus
         InstanceRole: !Ref BatchInstanceRole
         ImageId: !Ref BatchAMI
         InstanceTypes:
@@ -114,9 +135,9 @@ Resources:
       ServiceRole: !Ref BatchServiceRole
       ComputeResources:
         Type: SPOT
-        MinvCpus: 0
-        MaxvCpus: 16
-        DesiredvCpus: 0
+        MinvCpus: !Ref BatchClusterSpotMinCpus
+        MaxvCpus: !Ref BatchClusterSpotMaxCpus
+        DesiredvCpus: !Ref BatchClusterSpotDesiredCpus
         InstanceRole: !Ref BatchInstanceRole
         ImageId: !Ref BatchAMI
         InstanceTypes:
@@ -128,7 +149,7 @@ Resources:
         Tags:
           project: !Ref ProjectTag
         SpotIamFleetRole: !Ref BatchSpotFleetRole
-        BidPercentage: 50
+        BidPercentage: !Ref BatchClusterSpotBidPercentage
       State: ENABLED
 
   # Job Queue
