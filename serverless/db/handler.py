@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Union, Optional
 from functools import wraps
 import os
 import logging
@@ -342,17 +342,20 @@ class Handler:
                                           permission):
             raise AuthError('Permission Denied')
 
-    def _is_member(self, user: str, group: str):
+    def _is_member(self, group: str, user: str,
+                   membership_type: Optional[str] = 'Member'):
         '''Determine if the given user is a member of the given group.
 
         Args:
-            user: The user UUID.
             group: The group UUID.
+            user: The user UUID.
+            membership_type: The required membership type.
 
         Raises:
-            AuthError: If the user is not a member of the group.
+            AuthError: If the user is not a member of the group (and does not
+            have the required level of membership by implication).
         '''
-        if not self.client.is_member(user, group):
+        if not self.client.is_member(group, user, membership_type):
             raise AuthError('Permission Denied')
 
     # def handle(self, event, context) -> str:
@@ -418,11 +421,22 @@ class Handler:
 
         return self.client.create_import(uuid, name, repository_uuid)
 
+    @response(201)
+    def create_membership(self, event, context):
+        group_uuid = _event_path_param(event, 'group_uuid')
+        user_uuid = _event_path_param(event, 'user_uuid')
+        membership_type = self.body.get('membership_type')
+        _validate_uuid(group_uuid)
+        _validate_uuid(user_uuid)
+        self._is_member(group_uuid, self.user_uuid, 'Owner')
+        return self.client.create_membership(group_uuid, user_uuid,
+                                             membership_type)
+
     @response(200)
     def get_group(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
-        self._is_member(self.user_uuid, uuid)
+        self._is_member(uuid, self.user_uuid)
 
         return self.client.get_group(uuid)
 
@@ -435,6 +449,18 @@ class Handler:
             raise AuthError(f'Can not describe user: {uuid}')
 
         return self.client.get_user(uuid)
+
+    @response(200)
+    def get_membership(self, event, context):
+        group_uuid = _event_path_param(event, 'group_uuid')
+        user_uuid = _event_path_param(event, 'user_uuid')
+        _validate_uuid(group_uuid)
+        _validate_uuid(user_uuid)
+        # Check if the requesting user is a member of the group that they
+        # are requesting a membership for
+        self._is_member(group_uuid, self.user_uuid)
+
+        return self.client.get_membership(group_uuid, user_uuid)
 
     @response(200)
     def get_repository(self, event, context):
@@ -693,12 +719,41 @@ class Handler:
         self._has_permission(self.user_uuid, 'Repository', uuid, 'Admin')
         return self.client.update_repository(uuid, name, raw_storage)
 
+    @response(200)
+    def update_membership(self, event, context):
+        group_uuid = _event_path_param(event, 'group_uuid')
+        user_uuid = _event_path_param(event, 'user_uuid')
+        _validate_uuid(group_uuid)
+        _validate_uuid(user_uuid)
+        membership_type = self.body.get('membership_type')
+
+        # Only an owner can change membership_type
+        if membership_type is not None:
+            self._is_member(group_uuid, self.user_uuid, 'Owner')
+        return self.client.update_membership(group_uuid, user_uuid,
+                                             membership_type)
+
     @response(204)
     def delete_repository(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Repository', uuid, 'Admin')
         return self.client.delete_repository(uuid)
+
+    @response(204)
+    def delete_membership(self, event, context):
+        group_uuid = _event_path_param(event, 'group_uuid')
+        user_uuid = _event_path_param(event, 'user_uuid')
+        _validate_uuid(group_uuid)
+        _validate_uuid(user_uuid)
+
+        # Only an owner can delete a membership unless the requesting user
+        # is the user subject of the membership
+        # TODO Ensure that someone retains the ability to modify a group,
+        # perhaps Organization Admin related
+        if self.user_uuid != user_uuid:
+            self._is_member(group_uuid, self.user_uuid, 'Owner')
+        return self.client.delete_membership(group_uuid, user_uuid)
 
     # @response(200)
     # def list_files_in_bfu(self, event, context):
@@ -770,13 +825,14 @@ class Handler:
     #     client.add_user_to_repository(repository, grantee, permissions)
     #     return {}
 
-
 handler = Handler()
 create_group = handler.create_group
 cognito_details = handler.cognito_details
 create_repository = handler.create_repository
 create_import = handler.create_import
+create_membership = handler.create_membership
 get_group = handler.get_group
+get_membership = handler.get_membership
 get_user = handler.get_user
 get_repository = handler.get_repository
 get_import = handler.get_import
@@ -790,6 +846,8 @@ list_bfus_in_import = handler.list_bfus_in_import
 list_keys_in_import = handler.list_keys_in_import
 list_images_in_bfu = handler.list_images_in_bfu
 list_keys_in_bfu = handler.list_keys_in_bfu
+update_membership = handler.update_membership
 update_import = handler.update_import
 update_repository = handler.update_repository
 delete_repository = handler.delete_repository
+delete_membership = handler.delete_membership

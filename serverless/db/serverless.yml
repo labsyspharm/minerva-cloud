@@ -73,6 +73,19 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
+  createMembership:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createMembership
+    handler: handler.create_membership
+    events:
+      - http:
+          method: POST
+          cors: true
+          path: /membership/{group_uuid}/{user_uuid}
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
   createRepository:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createRepository
     handler: handler.create_repository
@@ -107,6 +120,19 @@ functions:
           method: GET
           cors: true
           path: /group/{uuid}
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  getMembership:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getMembership
+    handler: handler.get_membership
+    events:
+      - http:
+          method: GET
+          cors: true
+          path: /membership/{group_uuid}/{user_uuid}
           authorizer:
             type: COGNITO_USER_POOLS
             authorizerId:
@@ -255,6 +281,19 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
+  updateMembership:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-updateMembership
+    handler: handler.update_membership
+    events:
+      - http:
+          method: PUT
+          cors: true
+          path: /membership/{group_uuid}/{user_uuid}
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
   updateImport:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-updateImport
     handler: handler.update_import
@@ -276,6 +315,19 @@ functions:
           method: PUT
           cors: true
           path: /repository/{uuid}
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  deleteMembership:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-deleteMembership
+    handler: handler.delete_membership
+    events:
+      - http:
+          method: DELETE
+          cors: true
+          path: /membership/{group_uuid}/{user_uuid}
           authorizer:
             type: COGNITO_USER_POOLS
             authorizerId:
