@@ -6,6 +6,7 @@ from io import BytesIO
 import base64
 import logging
 import boto3
+from botocore.exceptions import ClientError
 import re
 import json
 from datetime import date, datetime
@@ -14,6 +15,7 @@ import numpy as np
 from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
+import xml.etree.ElementTree as ET
 from minerva_db.sql.api import Client
 from minerva_lib import blend
 
@@ -22,6 +24,8 @@ logger.setLevel(logging.INFO)
 
 STACK_PREFIX = os.environ['STACK_PREFIX']
 STAGE = os.environ['STAGE']
+# TODO Handle different versions of the schema
+OME_NS = 'http://www.openmicroscopy.org/Schemas/OME/2016-06'
 
 ssm = boto3.client('ssm')
 
@@ -177,15 +181,84 @@ def _validate_uuid(u):
                          'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')
 
 
-def _s3_get(bucket, key):
-    '''Fetch a specific PNG from S3 and decode'''
+# TODO Refactor the meat of this as it's largely taken from db handler
+def handle_missing_tile(client, uuid, x, y, z, t, c, level, key):
 
-    obj = boto3.resource('s3').Object(bucket, key)
+    image = client.get_image(uuid)
+    bfu_uuid = image['bfu_uuid']
+    bfu = client.get_bfu(bfu_uuid)
+
+    if bfu['complete'] is not True:
+        raise ValueError(
+            f'Image has not been processed yet: {uuid}'
+        )
+
+    obj = boto3.resource('s3').Object(bucket.split(':')[-1],
+                                      f'{bfu_uuid}/metadata.xml')
     body = obj.get()['Body']
     data = body.read()
     stream = BytesIO(data)
-    image = cv2.imdecode(np.fromstring(stream.getvalue(), dtype=np.uint8), 0)
-    return image
+    e_root = ET.fromstring(stream.getvalue().decode('UTF-8'))
+    e_image = e_root.find('ome:Image[@ID="Image:{}"]'.format(uuid),
+                          {'ome': OME_NS})
+    e_pixels = e_image.find('ome:Pixels', {'ome': OME_NS})
+
+    size_c = int(e_pixels.attrib['SizeC'])
+    size_t = int(e_pixels.attrib['SizeT'])
+    size_x = int(e_pixels.attrib['SizeX'])
+    size_y = int(e_pixels.attrib['SizeY'])
+    size_z = int(e_pixels.attrib['SizeZ'])
+    size_level = image['pyramid_levels']
+
+    if not 0 <= c < size_c:
+        raise KeyError(
+            f'Requested channel index ({c}) outside range (0 - {size_c})'
+        )
+    if not 0 <= t < size_t:
+        raise KeyError(
+            f'Requested t index ({t}) outside range (0 - {size_t})'
+        )
+    if not 0 <= x < size_x:
+        raise KeyError(
+            f'Requested x index ({x}) outside range (0 - {size_x})'
+        )
+    if not 0 <= y < size_y:
+        raise KeyError(
+            f'Requested y index ({y}) outside range (0 - {size_y})'
+        )
+    if not 0 <= z < size_z:
+        raise KeyError(
+            f'Requested z index ({z}) outside range (0 - {size_z})'
+        )
+    if not 0 <= level < size_level:
+        raise KeyError(
+            f'Requested level index ({level}) outside range (0 - {size_level})'
+        )
+
+    raise Exception(f'Internal Server Error: Requested tile ({key}) not'
+                    'found')
+
+
+def _s3_get(client, bucket, uuid, x, y, z, t, c, level):
+    '''Fetch a specific PNG from S3 and decode'''
+
+    # Use the indices to build the key
+    key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}.png'
+
+    try:
+        obj = boto3.resource('s3').Object(bucket, key)
+        body = obj.get()['Body']
+        data = body.read()
+        stream = BytesIO(data)
+        image = cv2.imdecode(np.fromstring(stream.getvalue(),
+                                           dtype=np.uint8), 0)
+        return image
+
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'NoSuchKey':
+            handle_missing_tile(client, uuid, x, y, z, t, c, level, key)
+        else:
+            raise e
 
 
 def _hex_to_bgr(color):
@@ -262,16 +335,9 @@ class Handler:
         channels = [_parse_channel_params(param)
                     for param in channel_path_params]
 
-        # Use the indices to build the key base
-        key_base = (
-            f'{uuid}/'
-            'C{}'
-            f'-T{t}-Z{z}-L{level}-Y{y}-X{x}.png'
-        )
-
         # Prepare for blending
-        args = [(bucket.split(':')[-1], key_base.format(channel['index']))
-                for channel in channels]
+        args = [(self.client, bucket.split(':')[-1], uuid, x, y, z, t,
+                 channel['index'], level) for channel in channels]
 
         # TODO Blend images as they are received instead of waiting for all.
         # Either prepare in parallel (might be worth it as we get more vCPUs
@@ -280,7 +346,7 @@ class Handler:
 
         # Fetch raw tiles in parallel
         pool = ThreadPool(processes=len(channels))
-        images = pool.starmap(_s3_get, args)
+        images = pool.starmap(self._s3_get, args)
         pool.close()
 
         # Update channel dictionary with image data
