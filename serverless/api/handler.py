@@ -346,7 +346,7 @@ class Handler:
 
         # Fetch raw tiles in parallel
         pool = ThreadPool(processes=len(channels))
-        images = pool.starmap(self._s3_get, args)
+        images = pool.starmap(_s3_get, args)
         pool.close()
 
         # Update channel dictionary with image data
