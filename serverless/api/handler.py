@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Union, List
 from functools import wraps
 import os
 from multiprocessing.pool import ThreadPool
@@ -6,6 +6,8 @@ from io import BytesIO
 import base64
 import logging
 import boto3
+import math
+from botocore.exceptions import ClientError
 import re
 import json
 from datetime import date, datetime
@@ -14,6 +16,7 @@ import numpy as np
 from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
+import xml.etree.ElementTree as ET
 from minerva_db.sql.api import Client
 from minerva_lib import blend
 
@@ -22,6 +25,8 @@ logger.setLevel(logging.INFO)
 
 STACK_PREFIX = os.environ['STACK_PREFIX']
 STAGE = os.environ['STAGE']
+# TODO Handle different versions of the schema
+OME_NS = 'http://www.openmicroscopy.org/Schemas/OME/2016-06'
 
 ssm = boto3.client('ssm')
 
@@ -58,6 +63,10 @@ class AuthError(Exception):
     pass
 
 
+class TileBoundError(Exception):
+    pass
+
+
 def _setup_db():
     connection_string = URL('postgresql', username=db_user,
                             password=db_password, host=db_host, port=db_port,
@@ -78,8 +87,30 @@ def json_custom(obj: Any) -> str:
     raise TypeError("Type {} not serializable".format(type(obj)))
 
 
-def make_response(code: int, body: np.ndarray) -> Dict[str, Any]:
+def make_response(code: int, body: Union[Dict, List]) -> Dict[str, Any]:
     '''Build a response.
+
+        Args:
+            code: HTTP response code.
+            body: Python dictionary or list to jsonify.
+
+        Returns:
+            Response object compatible with AWS Lambda Proxy Integration
+    '''
+
+    return {
+        'statusCode': code,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Credentials': 'true'
+        },
+        'body': json.dumps(body, default=json_custom)
+    }
+
+
+def make_binary_response(code: int, body: np.ndarray) -> Dict[str, Any]:
+    '''Build a binary response.
 
         Args:
             code: HTTP response code.
@@ -135,13 +166,15 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
             try:
                 self.body = _event_body(event)
                 self.user_uuid = _event_user(event)
-                return make_response(code, fn(self, event, context))
+                return make_binary_response(code, fn(self, event, context))
             except KeyError as e:
                 return make_response(400, {'error': str(e)})
             except ValueError as e:
                 return make_response(422, {'error': str(e)})
             except AuthError as e:
                 return make_response(403, {'error': str(e)})
+            except TileBoundError as e:
+                return make_response(404, {'error': str(e)})
             except Exception as e:
                 logger.exception(e)
                 return make_response(500, {'error': str(e)})
@@ -177,15 +210,84 @@ def _validate_uuid(u):
                          'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')
 
 
-def _s3_get(bucket, key):
-    '''Fetch a specific PNG from S3 and decode'''
+# TODO Refactor the meat of this as it's largely taken from db handler
+def handle_missing_tile(client, uuid, x, y, z, t, c, level, key):
 
-    obj = boto3.resource('s3').Object(bucket, key)
+    image = client.get_image(uuid)
+    bfu_uuid = image['bfu_uuid']
+    bfu = client.get_bfu(bfu_uuid)
+
+    if bfu['complete'] is not True:
+        raise ValueError(
+            f'Image has not been processed yet: {uuid}'
+        )
+
+    obj = boto3.resource('s3').Object(bucket.split(':')[-1],
+                                      f'{bfu_uuid}/metadata.xml')
     body = obj.get()['Body']
     data = body.read()
     stream = BytesIO(data)
-    image = cv2.imdecode(np.fromstring(stream.getvalue(), dtype=np.uint8), 0)
-    return image
+    e_root = ET.fromstring(stream.getvalue().decode('UTF-8'))
+    e_image = e_root.find('ome:Image[@ID="Image:{}"]'.format(uuid),
+                          {'ome': OME_NS})
+    e_pixels = e_image.find('ome:Pixels', {'ome': OME_NS})
+
+    size_c = int(e_pixels.attrib['SizeC'])
+    size_t = int(e_pixels.attrib['SizeT'])
+    size_x = math.ceil(int(e_pixels.attrib['SizeX']) / 1024)
+    size_y = math.ceil(int(e_pixels.attrib['SizeY']) / 1024)
+    size_z = int(e_pixels.attrib['SizeZ'])
+    size_level = image['pyramid_levels']
+
+    if 0 > c or c >= size_c:
+        raise TileBoundError(
+            f'Requested channel index ({c}) outside range (0 - {size_c})'
+        )
+    elif 0 > t or t >= size_t:
+        raise TileBoundError(
+            f'Requested t index ({t}) outside range (0 - {size_t})'
+        )
+    elif 0 > x or x >= size_x:
+        raise TileBoundError(
+            f'Requested x index ({x}) outside range (0 - {size_x})'
+        )
+    elif 0 > y or y >= size_y:
+        raise TileBoundError(
+            f'Requested y index ({y}) outside range (0 - {size_y})'
+        )
+    elif 0 > z or z >= size_z:
+        raise TileBoundError(
+            f'Requested z index ({z}) outside range (0 - {size_z})'
+        )
+    elif 0 > level or level >= size_level:
+        raise TileBoundError(
+            f'Requested level index ({level}) outside range (0 - {size_level})'
+        )
+    else:
+        raise Exception(f'Internal Server Error: Requested tile ({key}) not'
+                        'found, but should exist')
+
+
+def _s3_get(client, bucket, uuid, x, y, z, t, c, level):
+    '''Fetch a specific PNG from S3 and decode'''
+
+    # Use the indices to build the key
+    key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}.png'
+
+    try:
+        obj = boto3.resource('s3').Object(bucket, key)
+        body = obj.get()['Body']
+        data = body.read()
+        stream = BytesIO(data)
+        image = cv2.imdecode(np.fromstring(stream.getvalue(),
+                                           dtype=np.uint8), 0)
+        return image
+
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'NoSuchKey':
+            handle_missing_tile(client, uuid, x, y, z, t, c, level, key)
+        else:
+            raise e
 
 
 def _hex_to_bgr(color):
@@ -262,16 +364,9 @@ class Handler:
         channels = [_parse_channel_params(param)
                     for param in channel_path_params]
 
-        # Use the indices to build the key base
-        key_base = (
-            f'{uuid}/'
-            'C{}'
-            f'-T{t}-Z{z}-L{level}-Y{y}-X{x}.png'
-        )
-
         # Prepare for blending
-        args = [(bucket.split(':')[-1], key_base.format(channel['index']))
-                for channel in channels]
+        args = [(self.client, bucket.split(':')[-1], uuid, x, y, z, t,
+                 channel['index'], level) for channel in channels]
 
         # TODO Blend images as they are received instead of waiting for all.
         # Either prepare in parallel (might be worth it as we get more vCPUs
@@ -279,9 +374,11 @@ class Handler:
         # or at least start processing each tile as it comes in
 
         # Fetch raw tiles in parallel
-        pool = ThreadPool(processes=len(channels))
-        images = pool.starmap(_s3_get, args)
-        pool.close()
+        try:
+            pool = ThreadPool(processes=len(channels))
+            images = pool.starmap(_s3_get, args)
+        finally:
+            pool.close()
 
         # Update channel dictionary with image data
         for channel, image in zip(channels, images):
@@ -289,6 +386,9 @@ class Handler:
 
         # Blend the raw tiles
         composite = blend.composite_channels(channels)
+
+        # CV2 requires 0 - 255 values
+        composite *= 255
 
         # Encode rendered image as PNG
         return cv2.imencode('.png', composite)[1]
