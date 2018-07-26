@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Union, List
 from functools import wraps
 import os
 from multiprocessing.pool import ThreadPool
@@ -6,6 +6,7 @@ from io import BytesIO
 import base64
 import logging
 import boto3
+import math
 from botocore.exceptions import ClientError
 import re
 import json
@@ -62,6 +63,10 @@ class AuthError(Exception):
     pass
 
 
+class TileBoundError(Exception):
+    pass
+
+
 def _setup_db():
     connection_string = URL('postgresql', username=db_user,
                             password=db_password, host=db_host, port=db_port,
@@ -82,8 +87,30 @@ def json_custom(obj: Any) -> str:
     raise TypeError("Type {} not serializable".format(type(obj)))
 
 
-def make_response(code: int, body: np.ndarray) -> Dict[str, Any]:
+def make_response(code: int, body: Union[Dict, List]) -> Dict[str, Any]:
     '''Build a response.
+
+        Args:
+            code: HTTP response code.
+            body: Python dictionary or list to jsonify.
+
+        Returns:
+            Response object compatible with AWS Lambda Proxy Integration
+    '''
+
+    return {
+        'statusCode': code,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Credentials': 'true'
+        },
+        'body': json.dumps(body, default=json_custom)
+    }
+
+
+def make_binary_response(code: int, body: np.ndarray) -> Dict[str, Any]:
+    '''Build a binary response.
 
         Args:
             code: HTTP response code.
@@ -139,13 +166,15 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
             try:
                 self.body = _event_body(event)
                 self.user_uuid = _event_user(event)
-                return make_response(code, fn(self, event, context))
+                return make_binary_response(code, fn(self, event, context))
             except KeyError as e:
                 return make_response(400, {'error': str(e)})
             except ValueError as e:
                 return make_response(422, {'error': str(e)})
             except AuthError as e:
                 return make_response(403, {'error': str(e)})
+            except TileBoundError as e:
+                return make_response(404, {'error': str(e)})
             except Exception as e:
                 logger.exception(e)
                 return make_response(500, {'error': str(e)})
@@ -205,38 +234,38 @@ def handle_missing_tile(client, uuid, x, y, z, t, c, level, key):
 
     size_c = int(e_pixels.attrib['SizeC'])
     size_t = int(e_pixels.attrib['SizeT'])
-    size_x = int(e_pixels.attrib['SizeX'])
-    size_y = int(e_pixels.attrib['SizeY'])
+    size_x = math.ceil(int(e_pixels.attrib['SizeX']) / 1024)
+    size_y = math.ceil(int(e_pixels.attrib['SizeY']) / 1024)
     size_z = int(e_pixels.attrib['SizeZ'])
     size_level = image['pyramid_levels']
 
-    if not 0 <= c < size_c:
-        raise KeyError(
+    if 0 > c or c >= size_c:
+        raise TileBoundError(
             f'Requested channel index ({c}) outside range (0 - {size_c})'
         )
-    if not 0 <= t < size_t:
-        raise KeyError(
+    elif 0 > t or t >= size_t:
+        raise TileBoundError(
             f'Requested t index ({t}) outside range (0 - {size_t})'
         )
-    if not 0 <= x < size_x:
-        raise KeyError(
+    elif 0 > x or x >= size_x:
+        raise TileBoundError(
             f'Requested x index ({x}) outside range (0 - {size_x})'
         )
-    if not 0 <= y < size_y:
-        raise KeyError(
+    elif 0 > y or y >= size_y:
+        raise TileBoundError(
             f'Requested y index ({y}) outside range (0 - {size_y})'
         )
-    if not 0 <= z < size_z:
-        raise KeyError(
+    elif 0 > z or z >= size_z:
+        raise TileBoundError(
             f'Requested z index ({z}) outside range (0 - {size_z})'
         )
-    if not 0 <= level < size_level:
-        raise KeyError(
+    elif 0 > level or level >= size_level:
+        raise TileBoundError(
             f'Requested level index ({level}) outside range (0 - {size_level})'
         )
-
-    raise Exception(f'Internal Server Error: Requested tile ({key}) not'
-                    'found')
+    else:
+        raise Exception(f'Internal Server Error: Requested tile ({key}) not'
+                        'found, but should exist')
 
 
 def _s3_get(client, bucket, uuid, x, y, z, t, c, level):
@@ -345,9 +374,11 @@ class Handler:
         # or at least start processing each tile as it comes in
 
         # Fetch raw tiles in parallel
-        pool = ThreadPool(processes=len(channels))
-        images = pool.starmap(_s3_get, args)
-        pool.close()
+        try:
+            pool = ThreadPool(processes=len(channels))
+            images = pool.starmap(_s3_get, args)
+        finally:
+            pool.close()
 
         # Update channel dictionary with image data
         for channel, image in zip(channels, images):
