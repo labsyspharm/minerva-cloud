@@ -290,6 +290,9 @@ class Handler:
         # Blend the raw tiles
         composite = blend.composite_channels(channels)
 
+        # CV2 requires 0 - 255 values
+        composite *= 255
+
         # Encode rendered image as PNG
         return cv2.imencode('.png', composite)[1]
 
