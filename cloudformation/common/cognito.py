@@ -22,20 +22,13 @@ def main():
         print('Error reading configuration YAML: {}'.format(e))
         sys.exit(1)
 
-    # Validate the number of subnets
-    if len(config['SubnetsPublic']) != 2:
-        print('Exactly 2 public subnets required')
-        sys.exit(1)
-
     region = config['Region']
     prefix = config['StackPrefix']
     stage = config['Stage']
-    name = '{}-cf-common'.format(prefix)
+    name = '{}-cf-cognito'.format(prefix)
     project_tag = config['ProjectTag']
-    subnets_public = ','.join(config['SubnetsPublic'])
-    database_password = config['DatabasePassword']
 
-    with open('main.yml', 'r') as f:
+    with open('cognito.yml', 'r') as f:
         template_body = f.read()
 
     cf = boto3.client('cloudformation', region_name=region)
@@ -43,7 +36,10 @@ def main():
     if args.operation == 'create':
         cf_method = cf.create_stack
     elif args.operation == 'update':
-        cf_method = cf.update_stack
+        print('Updating cognito not recommended because updating of a user '
+              'pool requiring replacement will result in an empty pool')
+        sys.exit(1)
+        # cf_method = cf.update_stack
     else:
         print('Method not implemented')
         sys.exit(1)
@@ -63,14 +59,6 @@ def main():
             {
                 'ParameterKey': 'ProjectTag',
                 'ParameterValue': project_tag
-            },
-            {
-                'ParameterKey': 'SubnetsPublic',
-                'ParameterValue': subnets_public
-            },
-            {
-                'ParameterKey': 'DatabasePassword',
-                'ParameterValue': database_password
             }
         ],
         Capabilities=[

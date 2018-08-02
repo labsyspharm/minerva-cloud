@@ -9,7 +9,6 @@ It is comprised of some cloudformation and serverless configurations.
 - A pair of private subnets with NAT gateways configured in the VPC.
 - A default security group which allows communication in/out from itself.
 - A security group which allows SSH communication to EC2 instances as required.
-- A Cognito user pool.
 - A configuration file with these and some other properties.
 - Standard roles for `BatchServiceRole`, `BatchInstanceRole` and
   `BatchSpotFleetRole`.
@@ -46,8 +45,6 @@ BatchClusterSpotMinCpus: 0
 BatchClusterSpotMaxCpus: 16
 BatchClusterSpotDesiredCpus: 0
 BatchClusterSpotBidPercentage: 50
-# Cognito User Pool ARN
-CognitoUserPool: arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_12345678
 # Database password
 DatabasePassword: password
 ```
@@ -82,9 +79,10 @@ configuration file.
 ## Instructions
 
 1. Deploy the common cloudformation infrastructure
-2. Build the Batch AMI
-3. Deploy the Batch cloudformation infrastructure
-4. Deploy the db serverless infrastructure
-5. Deploy the batch serverless infrastructure
-6. Deploy the api serverless infrastructure
-7. Run AWS lambda `initdb` method to initialise the database
+2. Deploy the cognito cloudformation infrastructure
+3. Build the Batch AMI
+4. Deploy the Batch cloudformation infrastructure
+5. Deploy the db serverless infrastructure
+6. Deploy the batch serverless infrastructure
+7. Deploy the api serverless infrastructure
+8. Run AWS lambda `initdb` method to initialise the database

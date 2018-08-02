@@ -1,4 +1,3 @@
-from typing import Any, Callable, Dict, List, Union
 from functools import wraps
 import os
 import logging
@@ -9,8 +8,10 @@ from uuid import uuid4
 from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.exc import NoResultFound
 from minerva_db.sql.api import Client
 from minerva_db.sql.models import Base, User
+
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -101,10 +102,9 @@ def _validate_uuid(u):
                          'abcdefgh-ijkl-mnop-qrst-uvwxyz012345')
 
 
-# TODO Any active connection will block this. Where are the active connections
-# coming from?
+# TODO Any active connection will block this. Use scoped sessions in all
+# lambdas to overcome this
 def _init_db(event, context):
-    logger.info('0')
     connection_string = URL('postgresql', username=db_user,
                             password=db_password, host=db_host, port=db_port,
                             database=db_name)
@@ -115,65 +115,10 @@ def _init_db(event, context):
     session = sessionmaker(bind=engine)()
 
     users = event['users']
-    users = [User(user['sub'],
-                  user['preferred_username'],
-                  user['email'])
+    users = [User(user['sub'])
              for user in users]
     session.add_all(users)
     session.commit()
-
-
-@in_session
-def _dummy_db(event, context):
-
-    user = client.get_user('5d948445-b44b-4b2b-ac46-ce2528d56c88')
-
-    repository_uuid = str(uuid4())
-    repository = client.create_repository(
-        repository_uuid,
-        f'repo-{repository_uuid}',
-        user['uuid']
-    )
-
-    import_uuid = str(uuid4())
-    import_ = client.create_import(
-        import_uuid,
-        f'import-{import_uuid}',
-        repository['uuid']
-    )
-
-    filenames = [f'file-{uuid4()}-{i}' for i in range(10)]
-    dvs = [f'{filename}.dv' for filename in filenames]
-    logs = [f'{filename}.log' for filename in filenames]
-    client.add_keys_to_import(dvs + logs, import_['uuid'])
-
-    bfus = [
-        client.create_bfu(
-            str(uuid4()),
-            fileset[0].split('.')[0],
-            'fake-dv-reader',
-            fileset,
-            import_['uuid']
-        ) for i, fileset in enumerate(zip(dvs, logs))
-    ]
-    images = [
-        client.create_image(
-            str(uuid4()),
-            bfu['name'],
-            str(uuid4()),
-            1,
-            bfu['uuid']
-        ) for i, bfu in enumerate(bfus)
-    ]
-
-    return {
-        'users': [user],
-        'repositories': [repository],
-        'imports': [import_],
-        'keys': dvs + logs,
-        'bfus': bfus,
-        'images': images
-    }
 
 
 def _query_db(event, context):
@@ -215,3 +160,29 @@ def set_bfu_complete(event, context):
     bfu_uuid = event['bfu_uuid']
     images = event['images']
     client.update_bfu(bfu_uuid, complete=True, images=images)
+
+
+@in_session
+def create_user(event, context):
+    # TODO Handle case where a number of users are imported which may
+    #      already exist in the database
+    # Register the user in the minerva database
+    if event['triggerSource'] in ['PreSignUp_AdminCreateUser',
+                                  'PostConfirmation_ConfirmSignUp']:
+        uuid = event['userName']
+        _validate_uuid(uuid)
+
+        # Check if the user already exists. Cognito seems to have a retry
+        # policy that can be triggered (potentially) by running this lambda
+        # function when it is not hot. As a result, if the user is found, then
+        # simply skip user creation
+        try:
+            client.get_user(uuid)
+            return event
+        except NoResultFound:
+            print(f'User already exists, skipping creation: {uuid}')
+
+        print(f'Creating user: {uuid}')
+        client.create_user(uuid)
+
+    return event

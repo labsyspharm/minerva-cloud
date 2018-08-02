@@ -1,0 +1,109 @@
+Parameters:
+  StackPrefix:
+    Type: String
+    Description: Unique prefix used in related stacks for use by export
+  Stage:
+    Type: String
+    Description: Deployment stage
+  ProjectTag:
+    Type: String
+    Description: Project tag
+
+Resources:
+
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: True
+      AutoVerifiedAttributes:
+        - email
+      DeviceConfiguration:
+        ChallengeRequiredOnNewDevice: False
+        DeviceOnlyRememberedOnUserPrompt: False
+      EmailVerificationMessage: !Sub |
+        Welcome to ${StackPrefix}-${Stage}.
+        Please verify your email address. Your verification code is {####}
+      EmailVerificationSubject: !Sub "Verification: ${StackPrefix}-${Stage}!"
+      LambdaConfig:
+        PreSignUp: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${StackPrefix}-${Stage}-createUser
+        # "PreSignUp": "arn:aws:lambda:us-east-1:292075781285:function:minerva-test-dev-createUser"
+        # "PreSignUp": "arn:aws:lambda:us-east-1:292075781285:function:minerva-test-dev-createUser"
+        # arn:aws:cognito-idp:us-east-1:292075781285:userpool/us-east-1_jQEOV70H8
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: True
+          RequireNumbers: True
+          RequireSymbols: True
+          RequireUppercase: True
+      Schema:
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: preferred_username
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+      UsernameAttributes:
+        - email
+      UserPoolName: !Sub ${StackPrefix}-${Stage}-UserPool
+      UserPoolTags:
+        project: !Ref ProjectTag
+
+  WebClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+        ClientName: web-client
+        ReadAttributes:
+          - address
+          - birthdate
+          - email
+          - email_verified
+          - family_name
+          - gender
+          - given_name
+          - locale
+          - middle_name
+          - name
+          - nickname
+          - phone_number
+          - phone_number_verified
+          - picture
+          - preferred_username
+          - profile
+          - zoneinfo
+          - updated_at
+          - website
+        UserPoolId: !Ref CognitoUserPool
+        WriteAttributes:
+          - address
+          - birthdate
+          - email
+          - family_name
+          - gender
+          - given_name
+          - locale
+          - middle_name
+          - name
+          - nickname
+          - phone_number
+          - picture
+          - preferred_username
+          - profile
+          - zoneinfo
+          - updated_at
+          - website
+  # SSM
+  CognitoUserPoolARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/common/CognitoUserPoolARN
+      Description: Cognito User Pool ARN
+      Type: String
+      Value: !GetAtt CognitoUserPool.Arn

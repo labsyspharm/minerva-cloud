@@ -355,10 +355,6 @@ functions:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-queryDb
     handler: internal._query_db
 
-  dummyDb:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-dummyDb
-    handler: internal._dummy_db
-
   createBfu:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createBfu
     handler: internal.create_bfu
@@ -370,6 +366,10 @@ functions:
   setBFUComplete:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-setBFUComplete
     handler: internal.set_bfu_complete
+
+  createUser:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createUser
+    handler: internal.create_user
 
   #
   # list_repositories_for_user:
@@ -454,6 +454,17 @@ resources:
           Fn::GetAtt:
             - SetBFUCompleteLambdaFunction
             - Arn
+
+    TriggerPolicyCreateUser:
+      Type: AWS::Lambda::Permission
+      Properties:
+        Action: lambda:InvokeFunction
+        FunctionName:
+          Fn::GetAtt:
+            - CreateUserLambdaFunction
+            - Arn
+        Principal: cognito-idp.amazonaws.com
+        SourceArn: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/CognitoUserPoolARN}"
 
 plugins:
   - serverless-python-requirements
