@@ -7,7 +7,7 @@ provider:
     securityGroupIds:
       - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
       # TODO From SSM or replace completely, or from minerva-configs?
-      - sg-6ef8c813 # Default VPC for SSM
+      - sg-6ef8c813 # Default SG for SSM
     # Private subnets with internet routing
     # TODO Inject these from minerva-configs
     subnetIds:

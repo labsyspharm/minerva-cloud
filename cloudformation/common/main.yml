@@ -8,6 +8,9 @@ Parameters:
   ProjectTag:
     Type: String
     Description: Project tag
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID
   # Due to the awkward way in which mount targets are constructed there must be
   # exactly two public SubnetsPublic
   SubnetsPublic:
@@ -59,6 +62,7 @@ Resources:
       Tags:
         - Key: project
           Value: !Ref ProjectTag
+      VpcId: !Ref VpcId
 
   GeneralSGIngressSelf:
     Type: AWS::EC2::SecurityGroupIngress
