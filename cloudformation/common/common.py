@@ -32,6 +32,7 @@ def main():
     stage = config['Stage']
     name = '{}-cf-common'.format(prefix)
     project_tag = config['ProjectTag']
+    vpc_id = config['VpcId']
     subnets_public = ','.join(config['SubnetsPublic'])
     database_password = config['DatabasePassword']
 
@@ -63,6 +64,10 @@ def main():
             {
                 'ParameterKey': 'ProjectTag',
                 'ParameterValue': project_tag
+            },
+            {
+                'ParameterKey': 'VpcId',
+                'ParameterValue': vpc_id
             },
             {
                 'ParameterKey': 'SubnetsPublic',
