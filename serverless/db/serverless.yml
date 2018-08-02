@@ -1,4 +1,4 @@
-service: minerva-test-serverless-db
+service: ${file(${opt:config}):StackPrefix}-${file(${opt:config}):Stage}-serverless-db
 
 provider:
   name: aws
@@ -6,19 +6,15 @@ provider:
   vpc:
     securityGroupIds:
       - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
-      # TODO From SSM or replace completely, or from minerva-configs?
-      - sg-6ef8c813 # Default SG for SSM
+      # Default SG for SSM
+      - ${file(${opt:config}):DefaultSecurityGroup}
     # Private subnets with internet routing
-    # TODO Inject these from minerva-configs
-    subnetIds:
-      - subnet-7f4f8118
-      - subnet-950ecebb
+    subnetIds: ${file(${opt:config}):SubnetsPrivate}
   deploymentBucket:
-    name: minerva-serverless-deployment
+    name: ${file(${opt:config}):DeploymentBucket}
   environment:
-    # TODO Inject these from minerva-configs
-    STACK_PREFIX: minerva-test
-    STAGE: dev
+    STACK_PREFIX: ${file(${opt:config}):StackPrefix}
+    STAGE: ${file(${opt:config}):Stage}
   # TODO Move role creation to common and reference here (remember logging)?
   iamRoleStatements:
     - Effect: Allow
@@ -435,15 +431,6 @@ resources:
         ProviderARNs:
           - "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/CognitoUserPoolARN}"
 
-    ApiGatewayAuthorizerID:
-      Type: AWS::SSM::Parameter
-      Properties:
-        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/api/ApiGatewayAuthorizerID
-        Description: ID of API Gateway Authorizer
-        Type: String
-        Value:
-          Ref: ApiGatewayAuthorizer
-
     SetBFUCompleteLambdaARN:
       Type: AWS::SSM::Parameter
       Properties:
@@ -465,6 +452,38 @@ resources:
             - Arn
         Principal: cognito-idp.amazonaws.com
         SourceArn: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/CognitoUserPoolARN}"
+
+  Outputs:
+
+    ApiGatewayRestApiId:
+      Description: ID of API Gateway REST API
+      Value:
+        Ref: ApiGatewayRestApi
+      Export:
+        Name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayRestApiId
+
+    ApiGatewayRestApiRootResourceId:
+      Description: ID of API Gateway Root Resource
+      Value:
+        Fn::GetAtt:
+          - ApiGatewayRestApi
+          - RootResourceId
+      Export:
+        Name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayRestApiRootResourceId
+
+    ApiGatewayAuthorizerID:
+      Description: ID of API Gateway Authorizer
+      Value:
+        Ref: ApiGatewayAuthorizer
+      Export:
+        Name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+
+    ApiGatewayRestApiResourceImageUuidId:
+      Description: ID of API Gateway REST API Resource /image/{uuid}
+      Value:
+        Ref: ApiGatewayResourceImageUuidVar
+      Export:
+        Name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayRestApiResourceImageUuidId
 
 plugins:
   - serverless-python-requirements

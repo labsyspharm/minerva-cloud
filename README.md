@@ -21,6 +21,8 @@ Region: us-east-1
 StackPrefix: minerva-test
 Stage: dev
 ProjectTag: myproject
+# Bucket that serverless will use as a staging area for deployment
+DeploymentBucket: bucket-name
 # VPC ID
 VpcId: vpc-12345678
 # ECS optimised AMI upon which to build the BatchAMI
@@ -30,11 +32,16 @@ BatchAMI: ami-12345678
 # SSH Key Name to use for any instances
 SSHKeyName: ec2_ssh_id
 # SSH Security Group to use for an instances
-SSHSecurityGroup: sg-12345678
+DefaultSecurityGroup: sg-12345678
+# SSH Security Group to use for an instances
+SSHSecurityGroup: sg-87654321
 # Use existing subnets
 SubnetsPublic:
   - subnet-12345678
-  - subnet-87654321
+  - subnet-23456789
+SubnetsPrivate:
+  - subnet-34567890
+  - subnet-45678901
 # Use existing batch roles
 BatchServiceRole: arn:aws:iam::123456789012:role/service-role/AWSBatchServiceRole
 BatchInstanceRole: arn:aws:iam::123456789012:instance-profile/ecsInstanceRole
