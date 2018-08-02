@@ -21,6 +21,8 @@ Region: us-east-1
 StackPrefix: minerva-test
 Stage: dev
 ProjectTag: myproject
+# VPC ID
+VpcId: vpc-12345678
 # ECS optimised AMI upon which to build the BatchAMI
 BaseAMI: ami-5253c32d
 # EFS Volume specific AMI (built on ECS optimized AMI) to use for Batch
