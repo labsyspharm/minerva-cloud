@@ -23,10 +23,16 @@ except Exception as e:
     print('Error reading configuration YAML: {}'.format(e))
     sys.exit(1)
 
+# Validate the number of subnets
+if len(config['SubnetsPublic']) != 2:
+    print('Exactly 2 public subnets required')
+    sys.exit(1)
+
 region = config['Region']
 prefix = config['StackPrefix']
 stage = config['Stage']
 base_ami = config['BaseAMI']
+subnet_public = config['SubnetsPublic'][0]
 ssh_key_name = config['SSHKeyName']
 ssh_security_group = config['SSHSecurityGroup']
 tags = [{
@@ -95,6 +101,7 @@ instance_id = ec2.run_instances(
     MaxCount=1,
     MinCount=1,
     SecurityGroupIds=security_groups,
+    SubnetId=subnet_public,
     UserData=user_data,
     TagSpecifications=[
         {
@@ -117,7 +124,7 @@ while True:
         statuses = ec2.describe_instance_status(
             InstanceIds=[instance_id]
         )['InstanceStatuses']
-    except ClientError as e:
+    except ClientError:
         statuses = None
 
     if statuses is not None and len(statuses) > 0:
