@@ -18,11 +18,6 @@ Parameters:
   #   Type: List<AWS::EC2::Subnet::Id>
   #   Description: Private subnet IDs. Must be exactly two and be internet routeable!
 
-  # TODO Create the cognito user pool in cloudformation
-  CognitoUserPool:
-    Type: String
-    Description: Cognito User Pool ARN
-
   DatabasePassword:
     Type: String
     Description: Database password
@@ -195,14 +190,6 @@ Resources:
                   - !Sub ${RawBucket.Arn}/*
 
   # SSM
-  CognitoUserPoolARN:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub /${StackPrefix}/${Stage}/common/CognitoUserPoolARN
-      Description: Cognito User Pool ARN
-      Type: String
-      Value: !Ref CognitoUserPool
-
   EFSID:
     Type: AWS::SSM::Parameter
     Properties:
