@@ -11,15 +11,6 @@ Parameters:
   BatchAMI:
     Type: AWS::EC2::Image::Id
     Description: AMI Image ID configured to use specific EFS Volume
-  BatchServiceRole:
-    Type: String
-    Description: Service Role ARN for AWS Batch
-  BatchInstanceRole:
-    Type: String
-    Description: Instance Role ARN for AWS Batch
-  BatchSpotFleetRole:
-    Type: String
-    Description: Spot Fleet Role ARN for AWS Batch
   BatchClusterEC2MinCpus:
     Type: String
     Description: Minimum EC2 cluster size
@@ -46,6 +37,49 @@ Parameters:
     Description: Public subnet IDs. Must be exactly two!
 
 Resources:
+
+  BatchServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${StackPrefix}-${Stage}-BatchServiceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: batch.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+
+  BatchInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${StackPrefix}-${Stage}-BatchInstanceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+
+  BatchSpotFleetRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${StackPrefix}-${Stage}-BatchSpotFleetRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: spotfleet.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole
+
   BatchRole:
     Type: AWS::IAM::Role
     Properties:
@@ -55,8 +89,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service:
-                - ecs-tasks.amazonaws.com
+              Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
       Policies:
         - PolicyName: !Sub ${StackPrefix}-${Stage}-BatchRolePolicy
@@ -108,13 +141,13 @@ Resources:
     Properties:
       Type: MANAGED
       ComputeEnvironmentName: !Sub ${StackPrefix}-${Stage}-ec2
-      ServiceRole: !Ref BatchServiceRole
+      ServiceRole: !GetAtt BatchServiceRole.Arn
       ComputeResources:
         Type: EC2
         MinvCpus: !Ref BatchClusterEC2MinCpus
         MaxvCpus: !Ref BatchClusterEC2MaxCpus
         DesiredvCpus: !Ref BatchClusterEC2DesiredCpus
-        InstanceRole: !Ref BatchInstanceRole
+        InstanceRole: !GetAtt BatchInstanceRole.Arn
         ImageId: !Ref BatchAMI
         InstanceTypes:
           - optimal
@@ -132,13 +165,13 @@ Resources:
     Properties:
       Type: MANAGED
       ComputeEnvironmentName: !Sub ${StackPrefix}-${Stage}-spot
-      ServiceRole: !Ref BatchServiceRole
+      ServiceRole: !GetAtt BatchServiceRole.Arn
       ComputeResources:
         Type: SPOT
         MinvCpus: !Ref BatchClusterSpotMinCpus
         MaxvCpus: !Ref BatchClusterSpotMaxCpus
         DesiredvCpus: !Ref BatchClusterSpotDesiredCpus
-        InstanceRole: !Ref BatchInstanceRole
+        InstanceRole: !GetAtt BatchInstanceRole.Arn
         ImageId: !Ref BatchAMI
         InstanceTypes:
           - optimal
@@ -148,7 +181,7 @@ Resources:
         Subnets: !Ref SubnetsPublic
         Tags:
           project: !Ref ProjectTag
-        SpotIamFleetRole: !Ref BatchSpotFleetRole
+        SpotIamFleetRole: !GetAtt BatchSpotFleetRole.Arn
         BidPercentage: !Ref BatchClusterSpotBidPercentage
       State: ENABLED
 
