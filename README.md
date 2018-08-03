@@ -58,33 +58,6 @@ BatchClusterSpotBidPercentage: 50
 DatabasePassword: password
 ```
 
-## Hardcoded properties
-
-These are currently hardcoded, but should really be driven from the
-configuration file.
-
-- serverless, db, service
-- serverless, db, Default VPC for SSM
-- serverless, db, subnetIds
-- serverless, db, deploymentBucket
-- serverless, db, STACK_PREFIX
-- serverless, db, STAGE
-- serverless, batch, service
-- serverless, batch, Default VPC for SSM
-- serverless, batch, subnetIds
-- serverless, batch, deploymentBucket
-- serverless, batch, STACK_PREFIX
-- serverless, batch, STAGE
-- serverless, api, service
-- serverless, api, Default VPC for SSM
-- serverless, api, subnetIds
-- serverless, api, deploymentBucket
-- serverless, api, STACK_PREFIX
-- serverless, api, STAGE
-- serverless, api, restApiId
-- serverless, api, restApiRootResourceId
-- serverless, api, /image/{uuid}
-
 ## Instructions
 
 1. Deploy the common cloudformation infrastructure
