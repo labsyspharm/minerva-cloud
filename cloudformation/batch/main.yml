@@ -66,6 +66,13 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
 
+  BatchInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref BatchInstanceRole
+      InstanceProfileName: !Sub ${StackPrefix}-${Stage}-BatchInstanceProfile
+
   BatchSpotFleetRole:
     Type: AWS::IAM::Role
     Properties:
