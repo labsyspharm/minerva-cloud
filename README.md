@@ -23,8 +23,10 @@ ProjectTag: myproject
 DeploymentBucket: bucket-name
 # VPC ID
 VpcId: vpc-12345678
-# ECS optimised AMI upon which to build the BatchAMI
-BaseAMI: ami-5253c32d
+# ECS optimised AMI upon which to build the BatchAMI. This is region specific
+# and updated periodically by Amazon
+# https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
+BaseAMI: ami-644a431b
 # EFS Volume specific AMI (built on ECS optimized AMI) to use for Batch
 BatchAMI: ami-12345678
 # SSH Key Name to use for any instances
