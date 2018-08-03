@@ -28,7 +28,7 @@ def main():
     name = '{}-cf-cognito'.format(prefix)
     project_tag = config['ProjectTag']
 
-    with open('cognito.yml', 'r') as f:
+    with open('main.yml', 'r') as f:
         template_body = f.read()
 
     cf = boto3.client('cloudformation', region_name=region)

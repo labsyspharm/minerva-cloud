@@ -33,9 +33,6 @@ def main():
     name = '{}-cf-batch'.format(prefix)
     project_tag = config['ProjectTag']
     ami = config['BatchAMI']
-    batch_service_role = config['BatchServiceRole']
-    batch_instance_role = config['BatchInstanceRole']
-    batch_spot_fleet_role = config['BatchSpotFleetRole']
     batch_cluster_ec2_min_cpus = config['BatchClusterEC2MinCpus']
     batch_cluster_ec2_max_cpus = config['BatchClusterEC2MaxCpus']
     batch_cluster_ec2_desired_cpus = config['BatchClusterEC2DesiredCpus']
@@ -77,18 +74,6 @@ def main():
             {
                 'ParameterKey': 'BatchAMI',
                 'ParameterValue': ami
-            },
-            {
-                'ParameterKey': 'BatchServiceRole',
-                'ParameterValue': batch_service_role
-            },
-            {
-                'ParameterKey': 'BatchInstanceRole',
-                'ParameterValue': batch_instance_role
-            },
-            {
-                'ParameterKey': 'BatchSpotFleetRole',
-                'ParameterValue': batch_spot_fleet_role
             },
             {
                 'ParameterKey': 'BatchClusterEC2MinCpus',

@@ -10,8 +10,6 @@ It is comprised of some cloudformation and serverless configurations.
 - A default security group which allows communication in/out from itself.
 - A security group which allows SSH communication to EC2 instances as required.
 - A configuration file with these and some other properties.
-- Standard roles for `BatchServiceRole`, `BatchInstanceRole` and
-  `BatchSpotFleetRole`.
 - A deployment bucket for serverless.
 
 ## Configuration File
@@ -42,10 +40,6 @@ SubnetsPublic:
 SubnetsPrivate:
   - subnet-34567890
   - subnet-45678901
-# Use existing batch roles
-BatchServiceRole: arn:aws:iam::123456789012:role/service-role/AWSBatchServiceRole
-BatchInstanceRole: arn:aws:iam::123456789012:instance-profile/ecsInstanceRole
-BatchSpotFleetRole: arn:aws:iam::123456789012:role/aws-ec2-spot-fleet-role
 # Batch compute environments
 BatchClusterEC2MinCpus: 0
 BatchClusterEC2MaxCpus: 4
@@ -61,10 +55,54 @@ DatabasePassword: password
 ## Instructions
 
 1. Deploy the common cloudformation infrastructure
+
+```bash
+cd cloudformation/common
+python common.py ../../../minerva-configs/test/config.yml
+```
+
 2. Deploy the cognito cloudformation infrastructure
+
+```bash
+cd cloudformation/cognito
+python cognito.py ../../../minerva-configs/test/config.yml
+```
+
 3. Build the Batch AMI
+
+```bash
+cd ami-builder
+python build.py ../../../minerva-configs/test/config.yml
+```
+
 4. Deploy the Batch cloudformation infrastructure
+
+```bash
+cd cloudformation/batch
+python batch.py ../../../minerva-configs/test/config.yml
+```
+
 5. Deploy the db serverless infrastructure
+
+```bash
+cd serverless/db
+serverless deploy --config ../../../minerva-configs/test/config.yml
+```
+
 6. Deploy the batch serverless infrastructure
+
+```bash
+cd serverless/batch
+serverless deploy --config ../../../minerva-configs/test/config.yml
+```
+
 7. Deploy the api serverless infrastructure
+
+```bash
+cd serverless/api
+serverless deploy --config ../../../minerva-configs/test/config.yml
+```
+
 8. Run AWS lambda `initdb` method to initialise the database
+
+9. Create some users using the AWS Cognito console
