@@ -73,6 +73,10 @@ def in_session(fn):
 
 @in_session
 def addS3ManifestKeysToImport(event, context):
+
+    # Log the received event
+    print('Received event: ' + json.dumps(event, indent=2))
+
     import_uuid = event['import_uuid']
     prefix = f'{import_uuid}/'
     bucket = s3r.Bucket(raw_bucket.split(':')[-1])

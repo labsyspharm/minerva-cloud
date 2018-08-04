@@ -154,7 +154,7 @@ Resources:
         MinvCpus: !Ref BatchClusterEC2MinCpus
         MaxvCpus: !Ref BatchClusterEC2MaxCpus
         DesiredvCpus: !Ref BatchClusterEC2DesiredCpus
-        InstanceRole: !GetAtt BatchInstanceRole.Arn
+        InstanceRole: !GetAtt BatchInstanceProfile.Arn
         ImageId: !Ref BatchAMI
         InstanceTypes:
           - optimal
@@ -178,7 +178,7 @@ Resources:
         MinvCpus: !Ref BatchClusterSpotMinCpus
         MaxvCpus: !Ref BatchClusterSpotMaxCpus
         DesiredvCpus: !Ref BatchClusterSpotDesiredCpus
-        InstanceRole: !GetAtt BatchInstanceRole.Arn
+        InstanceRole: !GetAtt BatchInstanceProfile.Arn
         ImageId: !Ref BatchAMI
         InstanceTypes:
           - optimal
