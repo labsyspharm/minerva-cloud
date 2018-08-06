@@ -528,31 +528,6 @@ class Handler:
         return self.client.update_import(uuid, name, complete)
 
     @response(200)
-    def set_import_complete(self, event, context):
-        uuid = _event_path_param(event, 'uuid')
-        _validate_uuid(uuid)
-        self._has_permission(self.user_uuid, 'Import', uuid, 'Write')
-        import_ = self.client.get_import(uuid)
-        if import_['complete'] is True:
-            raise ValueError(f'Import is already complete: {uuid}')
-
-        import_ = self.client.set_import_complete(uuid)
-
-        # bucket_name = raw_bucket.split(':')[-1]
-        # s3_uri = 's3://{}/{}'.format(bucket_name, uuid)
-
-        # TODO Ensure the prefix is no longer writeable before processing
-        # TODO Record the execution ARN somewhere for monitoring
-        sfn.start_execution(
-            stateMachineArn=sync_sfn,
-            input=json.dumps({
-              'import_uuid': uuid
-            })
-        )
-
-        return import_
-
-    @response(200)
     def get_bfu(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)

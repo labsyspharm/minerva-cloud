@@ -2,6 +2,7 @@ service: ${file(${opt:config}):StackPrefix}-${file(${opt:config}):Stage}-serverl
 
 provider:
   name: aws
+  region: ${file(${opt:config}):Region}
   stage: ${file(${opt:config}):Stage}
   runtime: python3.6
   vpc:
