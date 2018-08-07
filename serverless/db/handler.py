@@ -13,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from minerva_db.sql.api import Client
+from minerva_db.sql.api.utils import to_jsonapi
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -606,22 +607,27 @@ class Handler:
         e_pixels = e_image.find('ome:Pixels', {'ome': OME_NS})
         e_channels = e_pixels.findall('ome:Channel', {'ome': OME_NS})
 
-        return {
-            'image': image,
-            'pixels': {
-                'SizeC': int(e_pixels.attrib['SizeC']),
-                'SizeT': int(e_pixels.attrib['SizeT']),
-                'SizeX': int(e_pixels.attrib['SizeX']),
-                'SizeY': int(e_pixels.attrib['SizeY']),
-                'SizeZ': int(e_pixels.attrib['SizeZ']),
-                'channels': [
-                    {
-                        'ID': e_channel.attrib['ID'],
-                        'Name': e_channel.attrib.get('Name')
-                    } for e_channel in e_channels
-                ]
+        return to_jsonapi(
+            {
+                'image_uuid': uuid,
+                'pixels': {
+                    'SizeC': int(e_pixels.attrib['SizeC']),
+                    'SizeT': int(e_pixels.attrib['SizeT']),
+                    'SizeX': int(e_pixels.attrib['SizeX']),
+                    'SizeY': int(e_pixels.attrib['SizeY']),
+                    'SizeZ': int(e_pixels.attrib['SizeZ']),
+                    'channels': [
+                        {
+                            'ID': e_channel.attrib['ID'],
+                            'Name': e_channel.attrib.get('Name')
+                        } for e_channel in e_channels
+                    ]
+                }
+            },
+            {
+                'images': [image]
             }
-        }
+        )
 
     @response(200)
     def get_image_credentials(self, event, context):
@@ -640,13 +646,11 @@ class Handler:
 
         tile_bucket_name = tile_bucket.split(':')[-1]
 
-        return {
+        return to_jsonapi({
             'image_url': f's3://{tile_bucket_name}/{uuid}/',
             'bfu_url': f's3://{tile_bucket_name}/{bfu_uuid}/',
             'credentials': response['Credentials']
-        }
-
-        return response['Credentials']
+        })
 
     @response(200)
     def list_imports_in_repository(self, event, context):
