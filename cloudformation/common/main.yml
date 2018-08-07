@@ -264,7 +264,7 @@ Resources:
       Name: !Sub /${StackPrefix}/${Stage}/common/DBPassword
       Description: Password for database
       Type: String
-      Value: 8n#v4DbGOkDb!!47CeDz
+      Value: !Ref DatabasePassword
 
   AssumedS3RoleReadARN:
     Type: AWS::SSM::Parameter
