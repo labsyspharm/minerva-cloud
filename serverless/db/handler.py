@@ -484,7 +484,7 @@ class Handler:
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Import', uuid, 'Write')
-        if self.client.get_import(uuid)['complete'] is not False:
+        if self.client.get_import(uuid)['data']['complete'] is not False:
             raise AuthError(
                 f'Import is complete and can not be written: {uuid}'
             )
@@ -496,10 +496,10 @@ class Handler:
             Policy=write_policy.format(raw_bucket, uuid)
         )
 
-        return {
+        return to_jsonapi({
             'url': 's3://{}/{}/'.format(raw_bucket.split(':')[-1], uuid),
             'credentials': response['Credentials']
-        }
+        })
 
     @response(200)
     def update_import(self, event, context):
@@ -514,7 +514,7 @@ class Handler:
         # Ensure the import is only marked complete once as this triggers
         # processing
         import_ = self.client.get_import(uuid)
-        if complete is True and import_['complete'] is True:
+        if complete is True and import_['data']['complete'] is True:
             raise ValueError(f'Import is already complete: {uuid}')
         else:
             # TODO Ensure the prefix is no longer writeable before processing
