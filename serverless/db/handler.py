@@ -592,7 +592,7 @@ class Handler:
         bfu_uuid = image['data']['bfu_uuid']
         bfu = self.client.get_bfu(bfu_uuid)
 
-        if bfu['complete'] is not True:
+        if bfu['data']['complete'] is not True:
             raise ValueError(
                 f'BFU has not had metadata extracted yet: {bfu_uuid}'
             )
