@@ -13,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from minerva_db.sql.api import Client
+from minerva_db.sql.api.utils import to_jsonapi
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -483,7 +484,7 @@ class Handler:
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Import', uuid, 'Write')
-        if self.client.get_import(uuid)['complete'] is not False:
+        if self.client.get_import(uuid)['data']['complete'] is not False:
             raise AuthError(
                 f'Import is complete and can not be written: {uuid}'
             )
@@ -495,10 +496,10 @@ class Handler:
             Policy=write_policy.format(raw_bucket, uuid)
         )
 
-        return {
+        return to_jsonapi({
             'url': 's3://{}/{}/'.format(raw_bucket.split(':')[-1], uuid),
             'credentials': response['Credentials']
-        }
+        })
 
     @response(200)
     def update_import(self, event, context):
@@ -513,7 +514,7 @@ class Handler:
         # Ensure the import is only marked complete once as this triggers
         # processing
         import_ = self.client.get_import(uuid)
-        if complete is True and import_['complete'] is True:
+        if complete is True and import_['data']['complete'] is True:
             raise ValueError(f'Import is already complete: {uuid}')
         else:
             # TODO Ensure the prefix is no longer writeable before processing
@@ -588,10 +589,10 @@ class Handler:
         bucket = tile_bucket.split(':')[-1]
 
         image = self.client.get_image(uuid)
-        bfu_uuid = image['bfu_uuid']
+        bfu_uuid = image['data']['bfu_uuid']
         bfu = self.client.get_bfu(bfu_uuid)
 
-        if bfu['complete'] is not True:
+        if bfu['data']['complete'] is not True:
             raise ValueError(
                 f'BFU has not had metadata extracted yet: {bfu_uuid}'
             )
@@ -606,22 +607,27 @@ class Handler:
         e_pixels = e_image.find('ome:Pixels', {'ome': OME_NS})
         e_channels = e_pixels.findall('ome:Channel', {'ome': OME_NS})
 
-        return {
-            'image': image,
-            'pixels': {
-                'SizeC': int(e_pixels.attrib['SizeC']),
-                'SizeT': int(e_pixels.attrib['SizeT']),
-                'SizeX': int(e_pixels.attrib['SizeX']),
-                'SizeY': int(e_pixels.attrib['SizeY']),
-                'SizeZ': int(e_pixels.attrib['SizeZ']),
-                'channels': [
-                    {
-                        'ID': e_channel.attrib['ID'],
-                        'Name': e_channel.attrib.get('Name')
-                    } for e_channel in e_channels
-                ]
+        return to_jsonapi(
+            {
+                'image_uuid': uuid,
+                'pixels': {
+                    'SizeC': int(e_pixels.attrib['SizeC']),
+                    'SizeT': int(e_pixels.attrib['SizeT']),
+                    'SizeX': int(e_pixels.attrib['SizeX']),
+                    'SizeY': int(e_pixels.attrib['SizeY']),
+                    'SizeZ': int(e_pixels.attrib['SizeZ']),
+                    'channels': [
+                        {
+                            'ID': e_channel.attrib['ID'],
+                            'Name': e_channel.attrib.get('Name')
+                        } for e_channel in e_channels
+                    ]
+                }
+            },
+            {
+                'images': [image['data']]
             }
-        }
+        )
 
     @response(200)
     def get_image_credentials(self, event, context):
@@ -629,7 +635,7 @@ class Handler:
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
         image = self.client.get_image(uuid)
-        bfu_uuid = image['bfu_uuid']
+        bfu_uuid = image['data']['bfu_uuid']
 
         # TODO Better session name?
         response = sts.assume_role(
@@ -640,13 +646,11 @@ class Handler:
 
         tile_bucket_name = tile_bucket.split(':')[-1]
 
-        return {
+        return to_jsonapi({
             'image_url': f's3://{tile_bucket_name}/{uuid}/',
             'bfu_url': f's3://{tile_bucket_name}/{bfu_uuid}/',
             'credentials': response['Credentials']
-        }
-
-        return response['Credentials']
+        })
 
     @response(200)
     def list_imports_in_repository(self, event, context):
