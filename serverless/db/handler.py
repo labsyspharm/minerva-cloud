@@ -589,7 +589,7 @@ class Handler:
         bucket = tile_bucket.split(':')[-1]
 
         image = self.client.get_image(uuid)
-        bfu_uuid = image['bfu_uuid']
+        bfu_uuid = image['data']['bfu_uuid']
         bfu = self.client.get_bfu(bfu_uuid)
 
         if bfu['complete'] is not True:
@@ -625,7 +625,7 @@ class Handler:
                 }
             },
             {
-                'images': [image]
+                'images': [image]['data']
             }
         )
 
@@ -635,7 +635,7 @@ class Handler:
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
         image = self.client.get_image(uuid)
-        bfu_uuid = image['bfu_uuid']
+        bfu_uuid = image['data']['bfu_uuid']
 
         # TODO Better session name?
         response = sts.assume_role(
