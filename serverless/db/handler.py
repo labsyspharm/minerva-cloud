@@ -625,7 +625,7 @@ class Handler:
                 }
             },
             {
-                'images': [image]['data']
+                'images': [image['data']]
             }
         )
 
