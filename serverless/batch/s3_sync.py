@@ -173,7 +173,7 @@ def start_scan_sfn(event, context):
 
         # Get current job definition
         scan_sfn = ssm.get_parameter(
-            Name='/{}/{}/batch/BFScanStepARN'.format(STACK_PREFIX, STAGE)
+            Name='/{}/{}/batch/ScanStepARN'.format(STACK_PREFIX, STAGE)
         )['Parameter']['Value']
 
         response = sfn.start_execution(

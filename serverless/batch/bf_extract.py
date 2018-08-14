@@ -76,23 +76,26 @@ def in_session(fn):
 
 
 @in_session
-def register_bfu(event, context):
+def register_fileset(event, context):
 
     # Log the received event
     print('Received event: ' + json.dumps(event, indent=2))
 
-    import_uuid = event['importUuid']
-    fileset = event['fileset']
-    reader = event['bioformatsReader']
+    import_uuid = event['import_uuid']
+    files = event['files']
+    reader = event['reader']
+    reader_software = event['reader_software']
+    reader_version = event['reader_version']
 
-    # Generate a uuid for this BFU
+    # Generate a uuid for this fileset
     uuid = str(uuid4())
 
-    # TODO Call the BFU something more sensible than just the first 128
+    # TODO Call the fileset something more sensible than just the first 128
     # characters of the last path component of the entrypoint
-    entrypoint = fileset[0].split('/')[-1][:128]
+    entrypoint = files[0].split('/')[-1][:128]
 
-    client.create_bfu(uuid, entrypoint, reader, fileset, import_uuid)
+    client.create_fileset(uuid, entrypoint, reader, reader_software,
+                          reader_version, files, import_uuid)
 
     return uuid
 
@@ -109,17 +112,21 @@ def submit_job(event, context):
         )['Parameter']['Value']
 
         # Get current job definition
+        # TODO Use the reader_software and reader_version to determine which
+        # Job Definition to use
         job_definition = ssm.get_parameter(
             Name='/{}/{}/batch/BFExtractJobDefinitionARN'.format(STACK_PREFIX,
                                                                  STAGE)
         )['Parameter']['Value']
 
-        # Get parameters
+        # Set parameters
         parameters = {
-            'dir': event['importUuid'],
-            'file': event['fileset'][0],
-            'reader': event['bioformatsReader'],
-            'bfuUuid': event['bfuUuid'],
+            'dir': event['import_uuid'],
+            'file': event['files'][0],
+            'reader': event['reader'],
+            'reader_software': event['reader_software'],
+            'reader_version': event['reader_version'],
+            'fileset_uuid': event['fileset_uuid'],
             'bucket': tile_bucket.split(':')[-1]
         }
 
@@ -183,8 +190,8 @@ def handle_raw_storage_level(event, context):
     # Log the received event
     print('Received event: ' + json.dumps(event, indent=2))
 
-    import_uuid = event['importUuid']
-    fileset = event['fileset']
+    import_uuid = event['import_uuid']
+    files = event['files']
 
     # TODO client methods to get an ancestor
     import_ = client.get_import(import_uuid)
@@ -193,7 +200,7 @@ def handle_raw_storage_level(event, context):
     bucket = raw_bucket.split(':')[-1]
 
     if storage_level in ('Destroy', 'Archive'):
-        keys = [f'{import_uuid}/{file}' for file in fileset]
+        keys = [f'{import_uuid}/{file}' for file in files]
 
         if storage_level == 'Destroy':
             logger.info('Destroying: ' + ', '.join(keys))

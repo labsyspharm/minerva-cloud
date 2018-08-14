@@ -529,18 +529,18 @@ class Handler:
         return self.client.update_import(uuid, name, complete)
 
     @response(200)
-    def get_bfu(self, event, context):
+    def get_fileset(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
-        self._has_permission(self.user_uuid, 'BFU', uuid, 'Read')
+        self._has_permission(self.user_uuid, 'Fileset', uuid, 'Read')
 
-        return self.client.get_bfu(uuid)
+        return self.client.get_fileset(uuid)
 
     # @response(200)
-    # def get_bfu_metadata(self, event, context):
+    # def get_fileset_metadata(self, event, context):
     #     uuid = _event_path_param(event, 'uuid')
     #     _validate_uuid(uuid)
-    #     self._has_permission(self.user_uuid, 'BFU', uuid, 'Read')
+    #     self._has_permission(self.user_uuid, 'Fileset', uuid, 'Read')
     #
     #     bucket = tile_bucket.split(':')[-1]
     #
@@ -589,15 +589,16 @@ class Handler:
         bucket = tile_bucket.split(':')[-1]
 
         image = self.client.get_image(uuid)
-        bfu_uuid = image['data']['bfu_uuid']
-        bfu = self.client.get_bfu(bfu_uuid)
+        fileset_uuid = image['data']['fileset_uuid']
+        fileset = self.client.get_fileset(fileset_uuid)
 
-        if bfu['data']['complete'] is not True:
+        if fileset['data']['complete'] is not True:
             raise ValueError(
-                f'BFU has not had metadata extracted yet: {bfu_uuid}'
+                f'Fileset has not had metadata extracted yet: {fileset_uuid}'
             )
 
-        obj = boto3.resource('s3').Object(bucket, f'{bfu_uuid}/metadata.xml')
+        obj = boto3.resource('s3').Object(bucket,
+                                          f'{fileset_uuid}/metadata.xml')
         body = obj.get()['Body']
         data = body.read()
         stream = BytesIO(data)
@@ -635,20 +636,20 @@ class Handler:
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
         image = self.client.get_image(uuid)
-        bfu_uuid = image['data']['bfu_uuid']
+        fileset_uuid = image['data']['fileset_uuid']
 
         # TODO Better session name?
         response = sts.assume_role(
             RoleArn=s3_assume_role_read,
             RoleSessionName='{}@{}'.format(self.user_uuid, uuid)[:64],
-            Policy=read_policy.format(tile_bucket, uuid, bfu_uuid)
+            Policy=read_policy.format(tile_bucket, uuid, fileset_uuid)
         )
 
         tile_bucket_name = tile_bucket.split(':')[-1]
 
         return to_jsonapi({
             'image_url': f's3://{tile_bucket_name}/{uuid}/',
-            'bfu_url': f's3://{tile_bucket_name}/{bfu_uuid}/',
+            'fileset_url': f's3://{tile_bucket_name}/{fileset_uuid}/',
             'credentials': response['Credentials']
         })
 
@@ -660,11 +661,11 @@ class Handler:
         return self.client.list_imports_in_repository(uuid)
 
     @response(200)
-    def list_bfus_in_import(self, event, context):
+    def list_filesets_in_import(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Import', uuid, 'Read')
-        return self.client.list_bfus_in_import(uuid)
+        return self.client.list_filesets_in_import(uuid)
 
     @response(200)
     def list_keys_in_import(self, event, context):
@@ -674,18 +675,18 @@ class Handler:
         return self.client.list_keys_in_import(uuid)
 
     @response(200)
-    def list_images_in_bfu(self, event, context):
+    def list_images_in_fileset(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
-        self._has_permission(self.user_uuid, 'BFU', uuid, 'Read')
-        return self.client.list_images_in_bfu(uuid)
+        self._has_permission(self.user_uuid, 'Fileset', uuid, 'Read')
+        return self.client.list_images_in_fileset(uuid)
 
     @response(200)
-    def list_keys_in_bfu(self, event, context):
+    def list_keys_in_fileset(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
-        self._has_permission(self.user_uuid, 'BFU', uuid, 'Read')
-        return self.client.list_keys_in_bfu(uuid)
+        self._has_permission(self.user_uuid, 'Fileset', uuid, 'Read')
+        return self.client.list_keys_in_fileset(uuid)
 
     @response(200)
     def update_repository(self, event, context):
@@ -735,7 +736,7 @@ class Handler:
         return self.client.delete_membership(group_uuid, user_uuid)
 
     # @response(200)
-    # def list_files_in_bfu(self, event, context):
+    # def list_files_in_fileset(self, event, context):
     #     pass
     #
     # @response(200)
@@ -767,8 +768,10 @@ class Handler:
     #     # TODO More specific query?
     #     image_details = client.describe_image(uuid)
     #
-    #     obj = boto3.resource('s3').Object(bucket,
-    #                                       image_details['bfu'] + '/metadata.xml')
+    #     obj = boto3.resource('s3').Object(
+    #         bucket,
+    #         image_details['fileset'] + '/metadata.xml'
+    #     )
     #     body = obj.get()['Body']
     #     data = body.read()
     #     stream = BytesIO(data)
@@ -804,6 +807,7 @@ class Handler:
     #     client.add_user_to_repository(repository, grantee, permissions)
     #     return {}
 
+
 handler = Handler()
 create_group = handler.create_group
 cognito_details = handler.cognito_details
@@ -816,15 +820,15 @@ get_user = handler.get_user
 get_repository = handler.get_repository
 get_import = handler.get_import
 get_import_credentials = handler.get_import_credentials
-get_bfu = handler.get_bfu
+get_fileset = handler.get_fileset
 get_image = handler.get_image
 get_image_dimensions = handler.get_image_dimensions
 get_image_credentials = handler.get_image_credentials
 list_imports_in_repository = handler.list_imports_in_repository
-list_bfus_in_import = handler.list_bfus_in_import
+list_filesets_in_import = handler.list_filesets_in_import
 list_keys_in_import = handler.list_keys_in_import
-list_images_in_bfu = handler.list_images_in_bfu
-list_keys_in_bfu = handler.list_keys_in_bfu
+list_images_in_fileset = handler.list_images_in_fileset
+list_keys_in_fileset = handler.list_keys_in_fileset
 update_membership = handler.update_membership
 update_import = handler.update_import
 update_repository = handler.update_repository

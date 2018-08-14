@@ -32,7 +32,7 @@ provider:
       Resource: "arn:aws:ssm:#{AWS::Region}:#{AWS::AccountId}:parameter/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/*"
     - Effect: Allow
       Action: states:StartExecution
-      Resource: "arn:aws:states:#{AWS::Region}:#{AWS::AccountId}:stateMachine:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-BFScanSM"
+      Resource: "arn:aws:states:#{AWS::Region}:#{AWS::AccountId}:stateMachine:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ScanSM"
     - Effect: Allow
       Action: s3:ListBucket
       Resource: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/S3BucketRawARN}"
@@ -59,24 +59,24 @@ functions:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-startScanSFN
     handler: s3_sync.start_scan_sfn
 
-  submitBFScanJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitBFScanJob
+  submitScanJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitScanJob
     handler: bf_scan.submit_job
 
-  checkStatusBFScanJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFScanJob
+  checkStatusScanJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusScanJob
     handler: bf_scan.check_status_job
 
-  registerBFU:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-registerBFU
-    handler: bf_extract.register_bfu
+  registerFileset:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-registerFileset
+    handler: bf_extract.register_fileset
 
-  submitBFExtractJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitBFExtractJob
+  submitExtractJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitExtractJob
     handler: bf_extract.submit_job
 
-  checkStatusBFExtractJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFExtractJob
+  checkStatusExtractJob:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusExtractJob
     handler: bf_extract.check_status_job
 
   handleRawStorageLevel:
@@ -138,15 +138,15 @@ stepFunctions:
             ResultPath: $.scanArn
             End: true
 
-    BFScanSM:
-      name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-BFScanSM
+    ScanSM:
+      name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ScanSM
       definition:
-        Comment: Complete worlflow of scanning data in EFS with Bio-Formats
+        Comment: Complete worlflow of scanning data in EFS for filesets
         StartAt: SubmitJob
         States:
           SubmitJob:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitBFScanJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitScanJob
             ResultPath: $.jobId
             Next: Wait30
           Wait30:
@@ -155,7 +155,7 @@ stepFunctions:
             Next: GetJobStatus
           GetJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFScanJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusScanJob
             InputPath: $.jobId
             ResultPath: $.status
             Next: IsJobComplete
@@ -175,24 +175,24 @@ stepFunctions:
             Error: DescribeJob returned FAILED
           GetFinalJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFScanJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusScanJob
             InputPath: $.jobId
             End: true
 
-    BFExtractSM:
-      name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-BFExtractSM
+    ExtractSM:
+      name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ExtractSM
       definition:
-        Comment: Complete workflow of extracting data in EFS with Bio-Formats
-        StartAt: RegisterBFU
+        Comment: Complete workflow of extracting Filesets in EFS into metadata and pyramid tiles
+        StartAt: RegisterFileset
         States:
-          RegisterBFU:
+          RegisterFileset:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-registerBFU
-            ResultPath: $.bfuUuid
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-registerFileset
+            ResultPath: $.fileset_uuid
             Next: SubmitJob
           SubmitJob:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitBFExtractJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitExtractJob
             ResultPath: $.jobId
             Next: Wait30
           Wait30:
@@ -201,7 +201,7 @@ stepFunctions:
             Next: GetJobStatus
           GetJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFExtractJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusExtractJob
             InputPath: $.jobId
             ResultPath: $.status
             Next: IsJobComplete
@@ -226,7 +226,7 @@ stepFunctions:
             Next: GetFinalJobStatus
           GetFinalJobStatus:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusBFExtractJob
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusExtractJob
             InputPath: $.jobId
             End: true
 
@@ -244,23 +244,23 @@ resources:
         Value:
           Ref: MinervaDashtestDashdevDashS3EFSSyncSM
 
-    BFScanStepARN:
+    ScanStepARN:
       Type: AWS::SSM::Parameter
       Properties:
-        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/batch/BFScanStepARN
-        Description: ARN of step function for Bio-Formats scan
+        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/batch/ScanStepARN
+        Description: ARN of step function for scan
         Type: String
         Value:
-          Ref: MinervaDashtestDashdevDashBFScanSM
+          Ref: MinervaDashtestDashdevDashScanSM
 
-    BFExtractStepARN:
+    ExtractStepARN:
       Type: AWS::SSM::Parameter
       Properties:
-        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/batch/BFExtractStepARN
-        Description: ARN of step function for Bio-Formats extract
+        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/batch/ExtractStepARN
+        Description: ARN of step function for extract
         Type: String
         Value:
-          Ref: MinervaDashtestDashdevDashBFExtractSM
+          Ref: MinervaDashtestDashdevDashExtractSM
 
   #
   # Outputs:
