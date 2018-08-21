@@ -7,12 +7,12 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
-    "serverless-python-requirements": "^4.0.0"
+    "serverless-python-requirements": "^4.1.1",
+    "serverless-step-functions": "dpwrussell/serverless-step-functions#keyname"
   },
   "devDependencies": {
-    "serverless-pseudo-parameters": "^1.6.0",
-    "serverless-step-functions": "^1.4.1"
+    "serverless-pseudo-parameters": "^2.1.0"
   }
 }

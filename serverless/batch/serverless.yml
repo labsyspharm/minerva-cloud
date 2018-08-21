@@ -230,7 +230,9 @@ stepFunctions:
             InputPath: $.jobId
             End: true
 
-
+# TODO Revert to using stock serverless-step-functions (see package.json) if the
+# issue regarding key name referencing can be resolved (potentially with my PR):
+# https://github.com/horike37/serverless-step-functions/pull/143
 
 resources:
   Resources:
@@ -242,7 +244,7 @@ resources:
         Description: ARN of step function for S3 EFS Sync
         Type: String
         Value:
-          Ref: MinervaDashtestDashdevDashS3EFSSyncSM
+          Ref: S3EFSSyncSMStepFunctionsStateMachine
 
     ScanStepARN:
       Type: AWS::SSM::Parameter
@@ -251,7 +253,7 @@ resources:
         Description: ARN of step function for scan
         Type: String
         Value:
-          Ref: MinervaDashtestDashdevDashScanSM
+          Ref: ScanSMStepFunctionsStateMachine
 
     ExtractStepARN:
       Type: AWS::SSM::Parameter
@@ -260,7 +262,7 @@ resources:
         Description: ARN of step function for extract
         Type: String
         Value:
-          Ref: MinervaDashtestDashdevDashExtractSM
+          Ref: ExtractSMStepFunctionsStateMachine
 
   #
   # Outputs:
