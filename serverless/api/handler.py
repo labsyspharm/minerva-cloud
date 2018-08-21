@@ -214,16 +214,16 @@ def _validate_uuid(u):
 def handle_missing_tile(client, uuid, x, y, z, t, c, level, key):
 
     image = client.get_image(uuid)
-    bfu_uuid = image['bfu_uuid']
-    bfu = client.get_bfu(bfu_uuid)
+    fileset_uuid = image['fileset_uuid']
+    fileset = client.get_fileset(fileset_uuid)
 
-    if bfu['complete'] is not True:
+    if fileset['complete'] is not True:
         raise ValueError(
             f'Image has not been processed yet: {uuid}'
         )
 
     obj = boto3.resource('s3').Object(bucket.split(':')[-1],
-                                      f'{bfu_uuid}/metadata.xml')
+                                      f'{fileset_uuid}/metadata.xml')
     body = obj.get()['Body']
     data = body.read()
     stream = BytesIO(data)

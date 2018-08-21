@@ -229,12 +229,12 @@ functions:
 
   listBfusInImport:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listBfusInImport
-    handler: handler.list_bfus_in_import
+    handler: handler.list_filesets_in_import
     events:
       - http:
           method: GET
           cors: true
-          path: /import/{uuid}/bfus
+          path: /import/{uuid}/filesets
           authorizer:
             type: COGNITO_USER_POOLS
             authorizerId:
@@ -255,12 +255,12 @@ functions:
 
   listImagesInBfu:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listImagesInBfu
-    handler: handler.list_images_in_bfu
+    handler: handler.list_images_in_fileset
     events:
       - http:
           method: GET
           cors: true
-          path: /bfu/{uuid}/images
+          path: /fileset/{uuid}/images
           authorizer:
             type: COGNITO_USER_POOLS
             authorizerId:
@@ -268,12 +268,12 @@ functions:
 
   listKeysInBfu:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listKeysInBfu
-    handler: handler.list_keys_in_bfu
+    handler: handler.list_keys_in_fileset
     events:
       - http:
           method: GET
           cors: true
-          path: /bfu/{uuid}/keys
+          path: /fileset/{uuid}/keys
           authorizer:
             type: COGNITO_USER_POOLS
             authorizerId:
@@ -355,15 +355,15 @@ functions:
 
   createBfu:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createBfu
-    handler: internal.create_bfu
+    handler: internal.create_fileset
 
   addKeysToImport:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-addKeysToImport
     handler: internal.add_keys_to_import
 
-  setBFUComplete:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-setBFUComplete
-    handler: internal.set_bfu_complete
+  setFilesetComplete:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-setFilesetComplete
+    handler: internal.set_fileset_complete
 
   createUser:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createUser
@@ -433,15 +433,15 @@ resources:
         ProviderARNs:
           - "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/CognitoUserPoolARN}"
 
-    SetBFUCompleteLambdaARN:
+    SetFilesetCompleteLambdaARN:
       Type: AWS::SSM::Parameter
       Properties:
-        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/api/SetBFUCompleteLambdaARN
-        Description: ARN of lambda function to complete a BFU and register its images
+        Name: /${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/api/SetFilesetCompleteLambdaARN
+        Description: ARN of lambda function to complete a Fileset and register its images
         Type: String
         Value:
           Fn::GetAtt:
-            - SetBFUCompleteLambdaFunction
+            - SetFilesetCompleteLambdaFunction
             - Arn
 
     TriggerPolicyCreateUser:

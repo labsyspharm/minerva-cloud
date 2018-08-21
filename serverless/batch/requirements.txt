@@ -1,2 +1,2 @@
-boto3==1.7.4
-git+https://github.com/sorgerlab/minerva-db#egg=minerva-db
+boto3==1.7.81
+git+https://github.com/dpwrussell/minerva-db#egg=minerva-db

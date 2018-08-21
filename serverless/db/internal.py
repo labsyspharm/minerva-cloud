@@ -136,7 +136,7 @@ def _query_db(event, context):
 
 
 @in_session
-def create_bfu(event, context):
+def create_fileset(event, context):
     name = event['name']
     reader = event['reader']
     keys = event['keys']
@@ -145,7 +145,7 @@ def create_bfu(event, context):
     _validate_uuid(import_uuid)
     uuid = str(uuid4())
 
-    return client.create_bfu(uuid, name, reader, keys, import_uuid)
+    return client.create_fileset(uuid, name, reader, keys, import_uuid)
 
 
 @in_session
@@ -156,10 +156,10 @@ def add_keys_to_import(event, context):
 
 
 @in_session
-def set_bfu_complete(event, context):
-    bfu_uuid = event['bfu_uuid']
+def set_fileset_complete(event, context):
+    fileset_uuid = event['fileset_uuid']
     images = event['images']
-    client.update_bfu(bfu_uuid, complete=True, images=images)
+    client.update_fileset(fileset_uuid, complete=True, images=images)
 
 
 @in_session

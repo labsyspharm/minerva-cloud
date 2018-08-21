@@ -137,10 +137,10 @@ Resources:
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${StackPrefix}/${Stage}/*"
               - Effect: Allow
                 Action: states:StartExecution
-                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${StackPrefix}-${Stage}-BFExtractSM"
+                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${StackPrefix}-${Stage}-ExtractSM"
               - Effect: Allow
                 Action: lambda:InvokeFunction
-                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${StackPrefix}-${Stage}-setBFUComplete"
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${StackPrefix}-${Stage}-setFilesetComplete"
 
   # EC2 Compute Environment
   Ec2Env:
@@ -261,7 +261,7 @@ Resources:
         Memory: 512
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
-        Image: sorgerlab/bfscanner:latest
+        Image: dpwrussell/bfscanner:latest
       RetryStrategy:
         Attempts: 2
 
@@ -292,12 +292,14 @@ Resources:
           - Ref::dir
           - Ref::file
           - Ref::reader
+          - Ref::reader_software
+          - Ref::reader_version
           - Ref::bucket
-          - Ref::bfuUuid
+          - Ref::fileset_uuid
         Memory: 1024
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
-        Image: sorgerlab/bfextractor:latest
+        Image: dpwrussell/bfextractor:latest
       RetryStrategy:
         Attempts: 2
 
