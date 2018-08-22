@@ -110,13 +110,33 @@ def _init_db(event, context):
                             database=db_name)
     engine = create_engine(connection_string)
     DBSession.close_all()
-    Base.metadata.drop_all(engine)
+
+    # In case the schema has changed, drop the entire schema instead of
+    # dropping tables
+    # Base.metadata.drop_all(engine)
+    with engine.connect() as conn:
+        conn.execute('DROP SCHEMA public CASCADE')
+        conn.execute('CREATE SCHEMA public')
+        conn.execute(f'GRANT ALL ON SCHEMA public TO {db_user}')
+
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
 
-    users = event['users']
-    users = [User(user['sub'])
-             for user in users]
+    # Get the list of currently confirmed users from Cognito
+    user_pool_arn = ssm.get_parameter(
+        Name='/{}/{}/common/CognitoUserPoolARN'.format(STACK_PREFIX, STAGE)
+    )['Parameter']['Value']
+
+    user_pool_id = user_pool_arn.split('/')[-1]
+
+    idp = boto3.client('cognito-idp')
+    response = idp.list_users(
+        UserPoolId=user_pool_id,
+        AttributesToGet=[]
+    )
+
+    # Create the existing users
+    users = [User(user['Username']) for user in response['Users']]
     session.add_all(users)
     session.commit()
 

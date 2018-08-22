@@ -42,6 +42,10 @@ provider:
       Action:
         - states:StartExecution
       Resource: "arn:aws:states:#{AWS::Region}:#{AWS::AccountId}:stateMachine:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-S3EFSSyncSM"
+    - Effect: Allow
+      Action:
+        - cognito-idp:ListUsers
+      Resource: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/CognitoUserPoolARN}"
 
 functions:
 
