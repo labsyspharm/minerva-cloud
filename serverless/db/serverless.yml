@@ -42,6 +42,10 @@ provider:
       Action:
         - states:StartExecution
       Resource: "arn:aws:states:#{AWS::Region}:#{AWS::AccountId}:stateMachine:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-S3EFSSyncSM"
+    - Effect: Allow
+      Action:
+        - cognito-idp:ListUsers
+      Resource: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/CognitoUserPoolARN}"
 
 functions:
 
@@ -227,8 +231,8 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
-  listBfusInImport:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listBfusInImport
+  listFilesetsInImport:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listFilesetsInImport
     handler: handler.list_filesets_in_import
     events:
       - http:
@@ -253,8 +257,8 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
-  listImagesInBfu:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listImagesInBfu
+  listImagesInFileset:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listImagesInFileset
     handler: handler.list_images_in_fileset
     events:
       - http:
@@ -266,8 +270,8 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
-  listKeysInBfu:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listKeysInBfu
+  listKeysInFileset:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listKeysInFileset
     handler: handler.list_keys_in_fileset
     events:
       - http:
@@ -353,8 +357,8 @@ functions:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-queryDb
     handler: internal._query_db
 
-  createBfu:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createBfu
+  createFileset:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createFileset
     handler: internal.create_fileset
 
   addKeysToImport:

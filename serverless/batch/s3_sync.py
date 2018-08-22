@@ -72,7 +72,7 @@ def in_session(fn):
 
 
 @in_session
-def addS3ManifestKeysToImport(event, context):
+def add_s3_manifest_keys_to_import(event, context):
 
     # Log the received event
     print('Received event: ' + json.dumps(event, indent=2))

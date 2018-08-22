@@ -194,8 +194,8 @@ def handle_raw_storage_level(event, context):
     files = event['files']
 
     # TODO client methods to get an ancestor
-    import_ = client.get_import(import_uuid)
-    repository = client.get_repository(import_['repository_uuid'])
+    import_ = client.get_import(import_uuid)['data']
+    repository = client.get_repository(import_['repository_uuid'])['data']
     storage_level = repository['raw_storage']
     bucket = raw_bucket.split(':')[-1]
 

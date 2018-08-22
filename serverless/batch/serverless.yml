@@ -45,7 +45,7 @@ provider:
 functions:
   addS3ManifestKeysToImport:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-addS3ManifestKeysToImport
-    handler: s3_sync.addS3ManifestKeysToImport
+    handler: s3_sync.add_s3_manifest_keys_to_import
 
   submitSyncJob:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitSyncJob
