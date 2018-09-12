@@ -143,7 +143,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              AWS: arn:aws:iam::292075781285:root
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
             Action: sts:AssumeRole
       Policies:
         - PolicyName: !Sub ${StackPrefix}-${Stage}-AssumedS3RoleReadPolicy
@@ -171,7 +171,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              AWS: arn:aws:iam::292075781285:root
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
             Action: sts:AssumeRole
       Policies:
         - PolicyName: !Sub ${StackPrefix}-${Stage}-AssumedS3RoleWritePolicy
