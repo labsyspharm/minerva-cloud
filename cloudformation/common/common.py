@@ -1,4 +1,5 @@
 import sys
+import os
 import argparse
 from ruamel.yaml import YAML
 import boto3
@@ -36,7 +37,9 @@ def main():
     subnets_public = ','.join(config['SubnetsPublic'])
     database_password = config['DatabasePassword']
 
-    with open('main.yml', 'r') as f:
+    fn = os.path.join(os.path.dirname(__file__), 'main.yml')
+
+    with open(fn, 'r') as f:
         template_body = f.read()
 
     cf = boto3.client('cloudformation', region_name=region)
