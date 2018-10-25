@@ -74,7 +74,7 @@ python cloudformation.py create cognito ../../minerva-configs/test/config.yml
 
 ```bash
 cd ami-builder
-python build.py ../../../minerva-configs/test/config.yml
+python build.py ../../minerva-configs/test/config.yml
 ```
 
 4. Deploy the Batch cloudformation infrastructure
