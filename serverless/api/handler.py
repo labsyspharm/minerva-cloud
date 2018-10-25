@@ -18,7 +18,7 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 import xml.etree.ElementTree as ET
 from minerva_db.sql.api import Client
-from minerva_lib import blend
+from minerva_lib import render
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -385,7 +385,7 @@ class Handler:
             channel['image'] = image
 
         # Blend the raw tiles
-        composite = blend.composite_channels(channels)
+        composite = render.composite_channels(channels)
 
         # CV2 requires 0 - 255 values
         composite *= 255
