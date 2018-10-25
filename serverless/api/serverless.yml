@@ -60,6 +60,20 @@ functions:
             authorizerId:
               Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
 
+  renderRegion:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-renderRegion
+    handler: handler.render_region
+    events:
+      - http:
+          method: GET
+          cors: true
+          path: /image/{uuid}/render-region/{x}/{y}/{width}/{height}/{z}/{t}/{channels+}
+          contentHandling: CONVERT_TO_BINARY
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+
 plugins:
   - serverless-python-requirements
   - serverless-pseudo-parameters

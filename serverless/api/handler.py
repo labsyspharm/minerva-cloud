@@ -199,6 +199,12 @@ def _event_path_param(event, key):
     return event['pathParameters'][key]
 
 
+def _event_query_param(event, key, multi=False):
+    if multi is True:
+        return event['queryStringParameters'][key].split(',')
+    return event['queryStringParameters'][key]
+
+
 _valid_uuid = re.compile(
     '^[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$'
 )
@@ -393,6 +399,116 @@ class Handler:
         # Encode rendered image as PNG
         return cv2.imencode('.png', composite)[1]
 
+    @response(200)
+    def render_region(self, event, context):
+        '''Render the specified region with the given settings'''
+
+        uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(uuid)
+        self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
+
+        x = int(_event_path_param(event, 'x'))
+        y = int(_event_path_param(event, 'y'))
+        width = int(_event_path_param(event, 'width'))
+        height = int(_event_path_param(event, 'height'))
+        z = int(_event_path_param(event, 'z'))
+        t = int(_event_path_param(event, 't'))
+
+        # Split the channels path parameters
+        channel_path_params = event['pathParameters']['channels'].split('/')
+
+        # Read the path parameter for the channels and convert
+        channels = [_parse_channel_params(param)
+                    for param in channel_path_params]
+
+        output_width = _event_query_param(event, 'output-width')
+        output_height = _event_query_param(event, 'output-height')
+
+        # TODO Query the shape of the full image
+        input_shape = (0, 0)
+        # TODO Query the number of levels available
+        level_count = 0
+        output_size = max(output_width, output_height)
+        # TODO Set prefer_higher_resolution from query parameter
+        prefer_higher_resolution = False
+
+        level = crop.get_optimum_pyramid_level(input_shape, level_count,
+                                               output_size,
+                                               prefer_higher_resolution)
+
+        origin = crop.transform_coordinates_to_level((x, y), level)
+        size = crop.transform_coordinates_to_level(
+            (output_width, output_height),
+            level
+        )
+
+        # NEW
+        for channel in channels:
+
+            color = channel['color']
+            _id = channel['channel']
+            _min = channel['min']
+            _max = channel['max']
+
+            for indices in crop.select_tiles(tile_size, crop_origin, crop_size):
+
+                (i, j) = indices
+
+                # Disallow negative tiles
+                if i < 0 or j < 0:
+                    continue
+
+                # Load image from Minerva
+                image = load_tile(_id, level, i, j)
+
+                # Disallow empty images
+                if image is None:
+                    continue
+
+                # Add to list of tiles
+                image_tiles.append({
+                    'min': _min,
+                    'max': _max,
+                    'image': image,
+                    'indices': (i, j),
+                    'color': color
+                })
+
+        # Should we instead be passing in the rendering information separately
+        # to the tile information, as that is quite redundant
+        return crop.stitch_tiles(image_tiles, tile_size, crop_origin, crop_size)
+        # NEW
+
+        # Prepare for blending
+        args = [(self.client, bucket.split(':')[-1], uuid, x, y, z, t,
+                 channel['index'], level) for channel in channels]
+
+        # TODO Blend images as they are received instead of waiting for all.
+        # Either prepare in parallel (might be worth it as we get more vCPUs
+        # with higher memory reservations) then blend in a thread safe manner
+        # or at least start processing each tile as it comes in
+
+        # Fetch raw tiles in parallel
+        try:
+            pool = ThreadPool(processes=len(channels))
+            images = pool.starmap(_s3_get, args)
+        finally:
+            pool.close()
+
+        # Update channel dictionary with image data
+        for channel, image in zip(channels, images):
+            channel['image'] = image
+
+        # Blend the raw tiles
+        composite = blend.composite_channels(channels)
+
+        # CV2 requires 0 - 255 values
+        composite *= 255
+
+        # Encode rendered image as PNG
+        return cv2.imencode('.png', composite)[1]
+
 
 handler = Handler()
 render_tile = handler.render_tile
+render_region = handler.render_region
