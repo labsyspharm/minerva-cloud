@@ -115,9 +115,6 @@ def main(operation, stack, config):
         'ProjectTag'
     ])
 
-    print(stack)
-    print(type(str(stack)))
-
     # Prepare the parameters specific to the requested stack
     if stack == 'common':
         parameters = prepare_common_parameters(config)
