@@ -59,15 +59,15 @@ DatabasePassword: password
 1. Deploy the common cloudformation infrastructure
 
 ```bash
-cd cloudformation/common
-python common.py ../../../minerva-configs/test/config.yml
+cd cloudformation
+python cloudformation.py create common ../../minerva-configs/test/config.yml
 ```
 
 2. Deploy the cognito cloudformation infrastructure
 
 ```bash
-cd cloudformation/cognito
-python cognito.py ../../../minerva-configs/test/config.yml
+cd cloudformation
+python cloudformation.py create cognito ../../minerva-configs/test/config.yml
 ```
 
 3. Build the Batch AMI
@@ -80,8 +80,8 @@ python build.py ../../../minerva-configs/test/config.yml
 4. Deploy the Batch cloudformation infrastructure
 
 ```bash
-cd cloudformation/batch
-python batch.py ../../../minerva-configs/test/config.yml
+cd cloudformation
+python cloudformation.py create batch ../../minerva-configs/test/config.yml
 ```
 
 5. Deploy the db serverless infrastructure
