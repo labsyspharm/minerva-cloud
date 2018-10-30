@@ -67,6 +67,10 @@ class TileBoundError(Exception):
     pass
 
 
+class AspectRatioError(Exception):
+    pass
+
+
 def _setup_db():
     connection_string = URL('postgresql', username=db_user,
                             password=db_password, host=db_host, port=db_port,
@@ -169,7 +173,7 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
                 return make_binary_response(code, fn(self, event, context))
             except KeyError as e:
                 return make_response(400, {'error': str(e)})
-            except ValueError as e:
+            except (ValueError, AspectRatioError) as e:
                 return make_response(422, {'error': str(e)})
             except AuthError as e:
                 return make_response(403, {'error': str(e)})
@@ -431,6 +435,12 @@ class Handler:
             if phr.lower() == 'true':
                 prefer_higher_resolution = True
 
+        # Check that the aspect ration of the output is the same as the
+        # requested region
+        if output_width / width != output_height / height:
+            raise AspectRatioError('Aspect ration of output height and width '
+                                   'must match requested region')
+
         # Query the shape of the full image
         image = self.client.get_image(uuid)
         fileset_uuid = image['data']['fileset_uuid']
@@ -525,12 +535,10 @@ class Handler:
         # Blend the raw tiles
         composite = render.composite_subtiles(tiles, tile_shape, origin, shape)
 
-        # Rescale for desired output size
-        if output_width >= output_height:
-            scaling_factor = output_width / shape[1]
-        else:
-            scaling_factor = output_height / shape[0]
-
+        # Rescale for desired output size (as aspect ratio is guaranteed to be
+        # the same as the requested region, only one of height or width is
+        # needed)
+        scaling_factor = output_shape[0] / shape[0]
         scaled = render.scale_image_nearest_neighbor(composite, scaling_factor)
 
         # CV2 requires 0 - 255 values
