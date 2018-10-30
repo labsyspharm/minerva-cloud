@@ -421,36 +421,70 @@ class Handler:
         channels = [_parse_channel_params(param)
                     for param in channel_path_params]
 
-        output_width = _event_query_param(event, 'output-width')
-        output_height = _event_query_param(event, 'output-height')
+        output_width = int(_event_query_param(event, 'output-width'))
+        output_height = int(_event_query_param(event, 'output-height'))
 
-        # TODO Query the shape of the full image
-        input_shape = (0, 0)
-        # TODO Query the number of levels available
-        level_count = 0
-        output_size = max(output_width, output_height)
-        # TODO Set prefer_higher_resolution from query parameter
+        # Set prefer_higher_resolution from query parameter
         prefer_higher_resolution = False
+        if 'prefer-higher-resolution' in event['queryStringParameters']:
+            phr = event['queryStringParameters']['prefer-higher-resolution']
+            if phr.lower() == 'true':
+                prefer_higher_resolution = True
 
-        level = crop.get_optimum_pyramid_level(input_shape, level_count,
-                                               output_size,
-                                               prefer_higher_resolution)
+        # Query the shape of the full image
+        image = self.client.get_image(uuid)
+        fileset_uuid = image['data']['fileset_uuid']
+        fileset = self.client.get_fileset(fileset_uuid)
 
-        origin = crop.transform_coordinates_to_level((x, y), level)
-        size = crop.transform_coordinates_to_level(
-            (output_width, output_height),
+        if fileset['data']['complete'] is not True:
+            raise ValueError(
+                f'Fileset has not had metadata extracted yet: {fileset_uuid}'
+            )
+
+        obj = boto3.resource('s3').Object(bucket.split(':')[-1],
+                                          f'{fileset_uuid}/metadata.xml')
+        body = obj.get()['Body']
+        data = body.read()
+        stream = BytesIO(data)
+        e_root = ET.fromstring(stream.getvalue().decode('UTF-8'))
+        e_image = e_root.find('ome:Image[@ID="Image:{}"]'.format(uuid),
+                              {'ome': OME_NS})
+        e_pixels = e_image.find('ome:Pixels', {'ome': OME_NS})
+
+        image_shape = (int(e_pixels.attrib['SizeX']),
+                       int(e_pixels.attrib['SizeY']))
+
+        # Query the number of levels available
+        level_count = image['data']['pyramid_levels']
+
+        # Create shape tuples
+        tile_shape = (1024, 1024)
+        target_shape = (height, width)
+        output_shape = (output_height, output_width)
+
+        # Get the optimum level of the pyramid from which to use tiles
+        level = render.get_optimum_pyramid_level(image_shape, level_count,
+                                                 max(output_shape),
+                                                 prefer_higher_resolution)
+
+        # Transform origin and shape of target region into that required for
+        # the pyramid level being used
+        origin = render.transform_coordinates_to_level((x, y), level)
+        shape = render.transform_coordinates_to_level(
+            target_shape,
             level
         )
 
-        # NEW
+        args = []
+        tiles = []
         for channel in channels:
 
             color = channel['color']
-            _id = channel['channel']
+            _id = channel['index']
             _min = channel['min']
             _max = channel['max']
 
-            for indices in crop.select_tiles(tile_size, crop_origin, crop_size):
+            for indices in render.select_grids(tile_shape, origin, shape):
 
                 (i, j) = indices
 
@@ -458,55 +492,52 @@ class Handler:
                 if i < 0 or j < 0:
                     continue
 
-                # Load image from Minerva
-                image = load_tile(_id, level, i, j)
-
-                # Disallow empty images
-                if image is None:
-                    continue
+                # Add to list of tiles to fetch
+                args.append((self.client,
+                             bucket.split(':')[-1],
+                             uuid,
+                             i,
+                             j,
+                             z,
+                             t,
+                             _id,
+                             level))
 
                 # Add to list of tiles
-                image_tiles.append({
+                tiles.append({
+                    'grid': (i, j),
+                    'color': color,
                     'min': _min,
-                    'max': _max,
-                    'image': image,
-                    'indices': (i, j),
-                    'color': color
+                    'max': _max
                 })
-
-        # Should we instead be passing in the rendering information separately
-        # to the tile information, as that is quite redundant
-        return crop.stitch_tiles(image_tiles, tile_size, crop_origin, crop_size)
-        # NEW
-
-        # Prepare for blending
-        args = [(self.client, bucket.split(':')[-1], uuid, x, y, z, t,
-                 channel['index'], level) for channel in channels]
-
-        # TODO Blend images as they are received instead of waiting for all.
-        # Either prepare in parallel (might be worth it as we get more vCPUs
-        # with higher memory reservations) then blend in a thread safe manner
-        # or at least start processing each tile as it comes in
 
         # Fetch raw tiles in parallel
         try:
-            pool = ThreadPool(processes=len(channels))
+            pool = ThreadPool(processes=len(args))
             images = pool.starmap(_s3_get, args)
         finally:
             pool.close()
 
-        # Update channel dictionary with image data
-        for channel, image in zip(channels, images):
-            channel['image'] = image
+        # Update tiles dictionary with image data
+        for image_tile, image in zip(tiles, images):
+            image_tile['image'] = image
 
         # Blend the raw tiles
-        composite = blend.composite_channels(channels)
+        composite = render.composite_subtiles(tiles, tile_shape, origin, shape)
+
+        # Rescale for desired output size
+        if output_width >= output_height:
+            scaling_factor = output_width / shape[1]
+        else:
+            scaling_factor = output_height / shape[0]
+
+        scaled = render.scale_image_nearest_neighbor(composite, scaling_factor)
 
         # CV2 requires 0 - 255 values
-        composite *= 255
+        scaled *= 255
 
         # Encode rendered image as PNG
-        return cv2.imencode('.png', composite)[1]
+        return cv2.imencode('.png', scaled)[1]
 
 
 handler = Handler()
