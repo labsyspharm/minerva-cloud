@@ -435,9 +435,10 @@ class Handler:
             if phr.lower() == 'true':
                 prefer_higher_resolution = True
 
-        # Check that the aspect ration of the output is the same as the
+        # Check that the aspect ratio of the output is the same as the
         # requested region
-        if output_width / width != output_height / height:
+        if not math.isclose(output_width / output_height, width / height,
+                            rel_tol=0.01):
             raise AspectRatioError('Aspect ration of output height and width '
                                    'must match requested region')
 
