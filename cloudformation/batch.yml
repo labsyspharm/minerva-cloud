@@ -232,7 +232,7 @@ Resources:
         Memory: 256
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
-        Image: sorgerlab/awscli:latest
+        Image: sorgerlab/awscli:0.0.1
       RetryStrategy:
         Attempts: 2
 
@@ -261,7 +261,7 @@ Resources:
         Memory: 512
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
-        Image: dpwrussell/bfscanner:latest
+        Image: sorgerlab/bfscanner:0.0.1
       RetryStrategy:
         Attempts: 2
 
@@ -299,7 +299,7 @@ Resources:
         Memory: 1024
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
-        Image: dpwrussell/bfextractor:latest
+        Image: sorgerlab/bfextractor:0.0.1
       RetryStrategy:
         Attempts: 2
 
