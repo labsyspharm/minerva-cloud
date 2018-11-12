@@ -204,9 +204,10 @@ def _event_path_param(event, key):
 
 
 def _event_query_param(event, key, multi=False):
+    value = event['queryStringParameters'][key]
     if multi is True:
-        return event['queryStringParameters'][key].split(',')
-    return event['queryStringParameters'][key]
+        return value.split(',')
+    return value
 
 
 _valid_uuid = re.compile(
@@ -425,22 +426,20 @@ class Handler:
         channels = [_parse_channel_params(param)
                     for param in channel_path_params]
 
-        output_width = int(_event_query_param(event, 'output-width'))
-        output_height = int(_event_query_param(event, 'output-height'))
+        # Read the optional query parameters for output shape
+        output_width = event['queryStringParameters'].get('output-width')
+        output_height = event['queryStringParameters'].get('output-height')
+        output_width = int(output_width) if output_width is not None else None
+        output_height = (int(output_height)
+                         if output_height is not None else None)
 
         # Set prefer_higher_resolution from query parameter
-        prefer_higher_resolution = False
-        if 'prefer-higher-resolution' in event['queryStringParameters']:
-            phr = event['queryStringParameters']['prefer-higher-resolution']
-            if phr.lower() == 'true':
-                prefer_higher_resolution = True
-
-        # Check that the aspect ratio of the output is the same as the
-        # requested region
-        if not math.isclose(output_width / output_height, width / height,
-                            rel_tol=0.01):
-            raise AspectRatioError('Aspect ration of output height and width '
-                                   'must match requested region')
+        prefer_higher_resolution = (
+            event['queryStringParameters'].get('prefer-higher-resolution')
+        )
+        prefer_higher_resolution = (prefer_higher_resolution.lower() == 'true'
+                                    if prefer_higher_resolution is not None
+                                    else False)
 
         # Query the shape of the full image
         image = self.client.get_image(uuid)
@@ -471,12 +470,17 @@ class Handler:
         # Create shape tuples
         tile_shape = (1024, 1024)
         target_shape = (height, width)
-        output_shape = (output_height, output_width)
 
         # Get the optimum level of the pyramid from which to use tiles
-        level = render.get_optimum_pyramid_level(image_shape, level_count,
-                                                 max(output_shape),
-                                                 prefer_higher_resolution)
+        try:
+            output_max = max(
+                [d for d in (output_height, output_width) if d is not None]
+            )
+            level = render.get_optimum_pyramid_level(image_shape, level_count,
+                                                     output_max,
+                                                     prefer_higher_resolution)
+        except ValueError:
+            level = 0
 
         # Transform origin and shape of target region into that required for
         # the pyramid level being used
@@ -485,6 +489,23 @@ class Handler:
             target_shape,
             level
         )
+
+        # Calculate the scaling factor
+        if output_width is not None:
+            if output_height is not None:
+                # Use both supplied scaling factors
+                scaling_factor = (output_height / shape[0],
+                                  output_width / shape[1])
+            else:
+                # Calculate scaling factor from output_width only
+                scaling_factor = output_width / shape[1]
+        else:
+            if output_height is not None:
+                # Calcuate scaling factor from output_height only
+                scaling_factor = output_height / shape[0]
+            else:
+                # No scaling
+                scaling_factor = 1
 
         args = []
         tiles = []
@@ -536,11 +557,12 @@ class Handler:
         # Blend the raw tiles
         composite = render.composite_subtiles(tiles, tile_shape, origin, shape)
 
-        # Rescale for desired output size (as aspect ratio is guaranteed to be
-        # the same as the requested region, only one of height or width is
-        # needed)
-        scaling_factor = output_shape[0] / shape[0]
-        scaled = render.scale_image_nearest_neighbor(composite, scaling_factor)
+        # Rescale for desired output size
+        if scaling_factor != 1:
+            scaled = render.scale_image_nearest_neighbor(composite,
+                                                         scaling_factor)
+        else:
+            scaled = composite
 
         # CV2 requires 0 - 255 values
         scaled *= 255
