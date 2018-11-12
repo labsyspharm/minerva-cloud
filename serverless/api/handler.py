@@ -18,7 +18,7 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 import xml.etree.ElementTree as ET
 from minerva_db.sql.api import Client
-from minerva_lib import blend
+from minerva_lib import render
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -64,6 +64,10 @@ class AuthError(Exception):
 
 
 class TileBoundError(Exception):
+    pass
+
+
+class AspectRatioError(Exception):
     pass
 
 
@@ -169,7 +173,7 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
                 return make_binary_response(code, fn(self, event, context))
             except KeyError as e:
                 return make_response(400, {'error': str(e)})
-            except ValueError as e:
+            except (ValueError, AspectRatioError) as e:
                 return make_response(422, {'error': str(e)})
             except AuthError as e:
                 return make_response(403, {'error': str(e)})
@@ -197,6 +201,13 @@ def _event_user(event):
 
 def _event_path_param(event, key):
     return event['pathParameters'][key]
+
+
+def _event_query_param(event, key, multi=False):
+    value = event['queryStringParameters'][key]
+    if multi is True:
+        return value.split(',')
+    return value
 
 
 _valid_uuid = re.compile(
@@ -385,7 +396,7 @@ class Handler:
             channel['image'] = image
 
         # Blend the raw tiles
-        composite = blend.composite_channels(channels)
+        composite = render.composite_channels(channels)
 
         # CV2 requires 0 - 255 values
         composite *= 255
@@ -393,6 +404,173 @@ class Handler:
         # Encode rendered image as PNG
         return cv2.imencode('.png', composite)[1]
 
+    @response(200)
+    def render_region(self, event, context):
+        '''Render the specified region with the given settings'''
+
+        uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(uuid)
+        self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
+
+        x = int(_event_path_param(event, 'x'))
+        y = int(_event_path_param(event, 'y'))
+        width = int(_event_path_param(event, 'width'))
+        height = int(_event_path_param(event, 'height'))
+        z = int(_event_path_param(event, 'z'))
+        t = int(_event_path_param(event, 't'))
+
+        # Split the channels path parameters
+        channel_path_params = event['pathParameters']['channels'].split('/')
+
+        # Read the path parameter for the channels and convert
+        channels = [_parse_channel_params(param)
+                    for param in channel_path_params]
+
+        # Read the optional query parameters for output shape
+        output_width = event['queryStringParameters'].get('output-width')
+        output_height = event['queryStringParameters'].get('output-height')
+        output_width = int(output_width) if output_width is not None else None
+        output_height = (int(output_height)
+                         if output_height is not None else None)
+
+        # Set prefer_higher_resolution from query parameter
+        prefer_higher_resolution = (
+            event['queryStringParameters'].get('prefer-higher-resolution')
+        )
+        prefer_higher_resolution = (prefer_higher_resolution.lower() == 'true'
+                                    if prefer_higher_resolution is not None
+                                    else False)
+
+        # Query the shape of the full image
+        image = self.client.get_image(uuid)
+        fileset_uuid = image['data']['fileset_uuid']
+        fileset = self.client.get_fileset(fileset_uuid)
+
+        if fileset['data']['complete'] is not True:
+            raise ValueError(
+                f'Fileset has not had metadata extracted yet: {fileset_uuid}'
+            )
+
+        obj = boto3.resource('s3').Object(bucket.split(':')[-1],
+                                          f'{fileset_uuid}/metadata.xml')
+        body = obj.get()['Body']
+        data = body.read()
+        stream = BytesIO(data)
+        e_root = ET.fromstring(stream.getvalue().decode('UTF-8'))
+        e_image = e_root.find('ome:Image[@ID="Image:{}"]'.format(uuid),
+                              {'ome': OME_NS})
+        e_pixels = e_image.find('ome:Pixels', {'ome': OME_NS})
+
+        image_shape = (int(e_pixels.attrib['SizeX']),
+                       int(e_pixels.attrib['SizeY']))
+
+        # Query the number of levels available
+        level_count = image['data']['pyramid_levels']
+
+        # Create shape tuples
+        tile_shape = (1024, 1024)
+        target_shape = (height, width)
+
+        # Get the optimum level of the pyramid from which to use tiles
+        try:
+            output_max = max(
+                [d for d in (output_height, output_width) if d is not None]
+            )
+            level = render.get_optimum_pyramid_level(image_shape, level_count,
+                                                     output_max,
+                                                     prefer_higher_resolution)
+        except ValueError:
+            level = 0
+
+        # Transform origin and shape of target region into that required for
+        # the pyramid level being used
+        origin = render.transform_coordinates_to_level((x, y), level)
+        shape = render.transform_coordinates_to_level(
+            target_shape,
+            level
+        )
+
+        # Calculate the scaling factor
+        if output_width is not None:
+            if output_height is not None:
+                # Use both supplied scaling factors
+                scaling_factor = (output_height / shape[0],
+                                  output_width / shape[1])
+            else:
+                # Calculate scaling factor from output_width only
+                scaling_factor = output_width / shape[1]
+        else:
+            if output_height is not None:
+                # Calcuate scaling factor from output_height only
+                scaling_factor = output_height / shape[0]
+            else:
+                # No scaling
+                scaling_factor = 1
+
+        args = []
+        tiles = []
+        for channel in channels:
+
+            color = channel['color']
+            _id = channel['index']
+            _min = channel['min']
+            _max = channel['max']
+
+            for indices in render.select_grids(tile_shape, origin, shape):
+
+                (i, j) = indices
+
+                # Disallow negative tiles
+                if i < 0 or j < 0:
+                    continue
+
+                # Add to list of tiles to fetch
+                args.append((self.client,
+                             bucket.split(':')[-1],
+                             uuid,
+                             i,
+                             j,
+                             z,
+                             t,
+                             _id,
+                             level))
+
+                # Add to list of tiles
+                tiles.append({
+                    'grid': (i, j),
+                    'color': color,
+                    'min': _min,
+                    'max': _max
+                })
+
+        # Fetch raw tiles in parallel
+        try:
+            pool = ThreadPool(processes=len(args))
+            images = pool.starmap(_s3_get, args)
+        finally:
+            pool.close()
+
+        # Update tiles dictionary with image data
+        for image_tile, image in zip(tiles, images):
+            image_tile['image'] = image
+
+        # Blend the raw tiles
+        composite = render.composite_subtiles(tiles, tile_shape, origin, shape)
+
+        # Rescale for desired output size
+        if scaling_factor != 1:
+            scaled = render.scale_image_nearest_neighbor(composite,
+                                                         scaling_factor)
+        else:
+            scaled = composite
+
+        # CV2 requires 0 - 255 values
+        scaled *= 255
+
+        # Encode rendered image as PNG
+        return cv2.imencode('.png', scaled)[1]
+
 
 handler = Handler()
 render_tile = handler.render_tile
+render_region = handler.render_region
