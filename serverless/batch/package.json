@@ -1,18 +1,7 @@
 {
-  "name": "minerva-serverless-batch",
-  "version": "0.0.1",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "serverless-python-requirements": "^4.1.1",
-    "serverless-step-functions": "dpwrussell/serverless-step-functions#keyname"
-  },
   "devDependencies": {
+    "serverless-python-requirements": "^4.1.1",
+    "serverless-step-functions": "dpwrussell/serverless-step-functions#keyname",
     "serverless-pseudo-parameters": "^2.1.0"
   }
 }
