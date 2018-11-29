@@ -258,6 +258,7 @@ Resources:
             Name: efs
         Command:
           - Ref::dir
+          - Ref::extract_job_definition_arn
         Memory: 512
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
