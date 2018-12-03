@@ -8,6 +8,9 @@ logger.setLevel(logging.INFO)
 
 STACK_PREFIX = os.environ['STACK_PREFIX']
 STAGE = os.environ['STAGE']
+JOB_QUEUE = f'/{STACK_PREFIX}/{STAGE}/batch/JobQueueARN'
+JOB_DEF_SCAN = f'/{STACK_PREFIX}/{STAGE}/batch/BFScanJobDefinitionARN'
+JOB_DEF_EXTRACT = f'/{STACK_PREFIX}/{STAGE}/batch/BFExtractJobDefinitionARN'
 
 batch = boto3.client('batch')
 ssm = boto3.client('ssm')
@@ -19,20 +22,26 @@ def submit_job(event, context):
     print('Received event: ' + json.dumps(event, indent=2))
 
     try:
-        # Get current job queue
-        job_queue = ssm.get_parameter(
-            Name='/{}/{}/batch/JobQueueARN'.format(STACK_PREFIX, STAGE)
-        )['Parameter']['Value']
+        # Get SSM parameters
+        ssm_response = ssm.get_parameters(Names=[
+            JOB_QUEUE,
+            JOB_DEF_SCAN,
+            JOB_DEF_EXTRACT
+        ])
 
-        # Get current job definition
-        job_definition = ssm.get_parameter(
-            Name='/{}/{}/batch/BFScanJobDefinitionARN'.format(STACK_PREFIX,
-                                                              STAGE)
-        )['Parameter']['Value']
+        ssm_params = {
+            param['Name']: param['Value']
+            for param in ssm_response['Parameters']
+        }
 
-        # Get parameters
+        job_queue = ssm_params[JOB_QUEUE]
+        job_def_scan = ssm_params[JOB_DEF_SCAN]
+        job_def_extract = ssm_params[JOB_DEF_EXTRACT]
+
+        # Set parameters
         parameters = {
-            'dir': event['import_uuid']
+            'dir': event['import_uuid'],
+            'extract_job_definition_arn': job_def_extract
         }
 
         print('Parameters:' + json.dumps(parameters, indent=2))
@@ -43,7 +52,7 @@ def submit_job(event, context):
         response = batch.submit_job(
             jobQueue=job_queue,
             jobName=job_name,
-            jobDefinition=job_definition,
+            jobDefinition=job_def_scan,
             parameters=parameters
         )
 

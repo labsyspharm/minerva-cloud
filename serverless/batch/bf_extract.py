@@ -111,13 +111,8 @@ def submit_job(event, context):
             Name='/{}/{}/batch/JobQueueARN'.format(STACK_PREFIX, STAGE)
         )['Parameter']['Value']
 
-        # Get current job definition
-        # TODO Use the reader_software and reader_version to determine which
-        # Job Definition to use
-        job_definition = ssm.get_parameter(
-            Name='/{}/{}/batch/BFExtractJobDefinitionARN'.format(STACK_PREFIX,
-                                                                 STAGE)
-        )['Parameter']['Value']
+        # Get the job definition that corresponds to the one used during scan
+        job_definition = event['extract_job_definition_arn']
 
         # Set parameters
         parameters = {
