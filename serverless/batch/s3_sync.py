@@ -88,7 +88,7 @@ def add_s3_manifest_keys_to_import(event, context):
     client.add_keys_to_import(keys, import_uuid)
 
 
-def submit_job(event, context):
+def prepare_environment(event, context):
 
     # Log the received event
     print('Received event: ' + json.dumps(event, indent=2))
@@ -108,56 +108,25 @@ def submit_job(event, context):
         # Get parameters
         bucket = raw_bucket.split(':')[-1]
         import_uuid = event['import_uuid']
-        parameters = {
+        batch_parameters = {
             's3uri': f's3://{bucket}/{import_uuid}',
             'dir': import_uuid
         }
 
-        print('Parameters:' + json.dumps(parameters, indent=2))
-
+        # Pass this to the step function to allow it to be upgraded to
+        # something more useful later
         job_name = 'sync_s3_efs'
 
-        # Submit a Batch Job
-        response = batch.submit_job(
-            jobQueue=job_queue,
-            jobName=job_name,
-            jobDefinition=job_definition,
-            parameters=parameters
-        )
-
-        # Log response from AWS Batch
-        print('Response: ' + json.dumps(response, indent=2))
-
-        # Return the jobId
-        return response['jobId']
+        return {
+            'job_queue': job_queue,
+            'job_name': job_name,
+            'job_definition': job_definition,
+            'batch_parameters': batch_parameters
+        }
 
     except Exception as e:
         print(e)
-        message = 'Error submitting Batch Job'
-        print(message)
-        raise Exception(message)
-
-
-def check_status_job(event, context):
-    # Log the received event
-    print('Received event: ' + json.dumps(event, indent=2))
-
-    # Get jobId from the event
-    job_id = event
-
-    try:
-        # Call DescribeJobs
-        response = batch.describe_jobs(jobs=[job_id])
-
-        # Log response from AWS Batch
-        print('Response: ' + json.dumps(response, indent=2))
-
-        # Return the jobtatus
-        return response['jobs'][0]['status']
-
-    except Exception as e:
-        print(e)
-        message = 'Error getting Batch Job status'
+        message = 'Error preparing sync environment'
         print(message)
         raise Exception(message)
 

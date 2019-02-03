@@ -16,7 +16,7 @@ batch = boto3.client('batch')
 ssm = boto3.client('ssm')
 
 
-def submit_job(event, context):
+def prepare_environment(event, context):
 
     # Log the received event
     print('Received event: ' + json.dumps(event, indent=2))
@@ -38,56 +38,25 @@ def submit_job(event, context):
         job_def_scan = ssm_params[JOB_DEF_SCAN]
         job_def_extract = ssm_params[JOB_DEF_EXTRACT]
 
+        # Pass this to the step function to allow it to be upgraded to
+        # something more useful later
+        job_name = 'bf_scan'
+
         # Set parameters
-        parameters = {
+        batch_parameters = {
             'dir': event['import_uuid'],
             'extract_job_definition_arn': job_def_extract
         }
 
-        print('Parameters:' + json.dumps(parameters, indent=2))
-
-        job_name = 'bf_scan'
-
-        # Submit a Batch Job
-        response = batch.submit_job(
-            jobQueue=job_queue,
-            jobName=job_name,
-            jobDefinition=job_def_scan,
-            parameters=parameters
-        )
-
-        # Log response from AWS Batch
-        print('Response: ' + json.dumps(response, indent=2))
-
-        # Return the jobId
-        return response['jobId']
+        return {
+            'job_queue': job_queue,
+            'job_name': job_name,
+            'job_definition': job_def_scan,
+            'batch_parameters': batch_parameters
+        }
 
     except Exception as e:
         print(e)
-        message = 'Error submitting Batch Job'
-        print(message)
-        raise Exception(message)
-
-
-def check_status_job(event, context):
-    # Log the received event
-    print('Received event: ' + json.dumps(event, indent=2))
-
-    # Get jobId from the event
-    job_id = event
-
-    try:
-        # Call DescribeJobs
-        response = batch.describe_jobs(jobs=[job_id])
-
-        # Log response from AWS Batch
-        print('Response: ' + json.dumps(response, indent=2))
-
-        # Return the jobtatus
-        return response['jobs'][0]['status']
-
-    except Exception as e:
-        print(e)
-        message = 'Error getting Batch Job status'
+        message = 'Error preparing scan environment'
         print(message)
         raise Exception(message)

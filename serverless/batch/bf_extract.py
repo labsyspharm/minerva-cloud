@@ -9,11 +9,13 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from minerva_db.sql.api import Client
 
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 STACK_PREFIX = os.environ['STACK_PREFIX']
 STAGE = os.environ['STAGE']
+JOB_QUEUE = f'/{STACK_PREFIX}/{STAGE}/batch/JobQueueARN'
 
 batch = boto3.client('batch')
 ssm = boto3.client('ssm')
@@ -100,22 +102,27 @@ def register_fileset(event, context):
     return uuid
 
 
-def submit_job(event, context):
+def prepare_environment(event, context):
 
     # Log the received event
     print('Received event: ' + json.dumps(event, indent=2))
 
     try:
-        # Get current job queue
-        job_queue = ssm.get_parameter(
-            Name='/{}/{}/batch/JobQueueARN'.format(STACK_PREFIX, STAGE)
-        )['Parameter']['Value']
+        # Get SSM parameters
+        ssm_response = ssm.get_parameters(Names=[
+            JOB_QUEUE
+        ])
 
-        # Get the job definition that corresponds to the one used during scan
+        ssm_params = {
+            param['Name']: param['Value']
+            for param in ssm_response['Parameters']
+        }
+
+        job_queue = ssm_params[JOB_QUEUE]
         job_definition = event['extract_job_definition_arn']
 
         # Set parameters
-        parameters = {
+        batch_parameters = {
             'dir': event['import_uuid'],
             'file': event['files'][0],
             'reader': event['reader'],
@@ -125,51 +132,20 @@ def submit_job(event, context):
             'bucket': tile_bucket.split(':')[-1]
         }
 
-        print('Parameters:' + json.dumps(parameters, indent=2))
-
+        # Pass this to the step function to allow it to be upgraded to
+        # something more useful later
         job_name = 'bf_extract'
 
-        # Submit a Batch Job
-        response = batch.submit_job(
-            jobQueue=job_queue,
-            jobName=job_name,
-            jobDefinition=job_definition,
-            parameters=parameters
-        )
-
-        # Log response from AWS Batch
-        print('Response: ' + json.dumps(response, indent=2))
-
-        # Return the jobId
-        return response['jobId']
+        return {
+            'job_queue': job_queue,
+            'job_name': job_name,
+            'job_definition': job_definition,
+            'batch_parameters': batch_parameters
+        }
 
     except Exception as e:
         print(e)
-        message = 'Error submitting Batch Job'
-        print(message)
-        raise Exception(message)
-
-
-def check_status_job(event, context):
-    # Log the received event
-    print('Received event: ' + json.dumps(event, indent=2))
-
-    # Get jobId from the event
-    job_id = event
-
-    try:
-        # Call DescribeJobs
-        response = batch.describe_jobs(jobs=[job_id])
-
-        # Log response from AWS Batch
-        print('Response: ' + json.dumps(response, indent=2))
-
-        # Return the jobtatus
-        return response['jobs'][0]['status']
-
-    except Exception as e:
-        print(e)
-        message = 'Error getting Batch Job status'
+        message = 'Error preparing extraction environment'
         print(message)
         raise Exception(message)
 
