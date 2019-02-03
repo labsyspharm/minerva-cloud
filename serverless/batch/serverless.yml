@@ -41,43 +41,37 @@ provider:
         - s3:PutObjectTagging
         - s3:DeleteObject
       Resource: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/S3BucketRawARN}/*"
+    - Effect: Allow
+      Action:
+        - events:PutTargets
+        - events:PutRule
+        - events:DescribeRule
+      Resource: "arn:aws:events:#{AWS::Region}:#{AWS::AccountId}:rule/StepFunctionsGetEventsForBatchJobsRule"
 
 functions:
   addS3ManifestKeysToImport:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-addS3ManifestKeysToImport
     handler: s3_sync.add_s3_manifest_keys_to_import
 
-  submitSyncJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitSyncJob
-    handler: s3_sync.submit_job
-
-  checkStatusSyncJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusSyncJob
-    handler: s3_sync.check_status_job
+  prepareSyncEnvironment:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prepareSyncEnvironment
+    handler: s3_sync.prepare_environment
 
   startScanSFN:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-startScanSFN
     handler: s3_sync.start_scan_sfn
 
-  submitScanJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitScanJob
-    handler: bf_scan.submit_job
-
-  checkStatusScanJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusScanJob
-    handler: bf_scan.check_status_job
+  prepareScanEnvironment:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prepareScanEnvironment
+    handler: bf_scan.prepare_environment
 
   registerFileset:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-registerFileset
     handler: bf_extract.register_fileset
 
-  submitExtractJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitExtractJob
-    handler: bf_extract.submit_job
-
-  checkStatusExtractJob:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusExtractJob
-    handler: bf_extract.check_status_job
+  prepareExtractEnvironment:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prepareExtractEnvironment
+    handler: bf_extract.prepare_environment
 
   handleRawStorageLevel:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-handleRawStorageLevel
@@ -95,41 +89,21 @@ stepFunctions:
             Type: Task
             Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-addS3ManifestKeysToImport
             ResultPath: null
-            Next: SubmitJob
-          SubmitJob:
+            Next: PrepareEnvironment
+          PrepareEnvironment:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitSyncJob
-            ResultPath: $.jobId
-            Next: Wait30
-          Wait30:
-            Type: Wait
-            Seconds: 30
-            Next: GetJobStatus
-          GetJobStatus:
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prepareSyncEnvironment
+            ResultPath: $.syncEnv
+            Next: RunBatchJob
+          RunBatchJob:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusSyncJob
-            InputPath: $.jobId
-            ResultPath: $.status
-            Next: IsJobComplete
-          IsJobComplete:
-            Type: Choice
-            Choices:
-              - Variable: $.status
-                StringEquals: FAILED
-                Next: JobFailed
-              - Variable: $.status
-                StringEquals: SUCCEEDED
-                Next: GetFinalJobStatus
-            Default: Wait30
-          JobFailed:
-            Type: Fail
-            Cause: S3 Sync Batch Job Failed
-            Error: DescribeJob returned FAILED
-          GetFinalJobStatus:
-            Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusSyncJob
-            InputPath: $.jobId
-            ResultPath: $.status
+            Resource: arn:aws:states:::batch:submitJob.sync
+            Parameters:
+              JobDefinition.$: $.syncEnv.job_definition
+              JobName.$: $.syncEnv.job_name
+              JobQueue.$: $.syncEnv.job_queue
+              Parameters.$: $.syncEnv.batch_parameters
+            ResultPath: $.batchJobDetails
             Next: StartScanSFN
           StartScanSFN:
             Type: Task
@@ -142,42 +116,23 @@ stepFunctions:
       name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ScanSM
       definition:
         Comment: Complete worlflow of scanning data in EFS for filesets
-        StartAt: SubmitJob
+        StartAt: PrepareEnvironment
         States:
-          SubmitJob:
+          PrepareEnvironment:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitScanJob
-            ResultPath: $.jobId
-            Next: Wait30
-          Wait30:
-            Type: Wait
-            Seconds: 30
-            Next: GetJobStatus
-          GetJobStatus:
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prepareScanEnvironment
+            ResultPath: $.syncEnv
+            Next: RunBatchJob
+          RunBatchJob:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusScanJob
-            InputPath: $.jobId
-            ResultPath: $.status
-            Next: IsJobComplete
-          IsJobComplete:
-            Type: Choice
-            Choices:
-              - Variable: $.status
-                StringEquals: FAILED
-                Next: JobFailed
-              - Variable: $.status
-                StringEquals: SUCCEEDED
-                Next: GetFinalJobStatus
-            Default: Wait30
-          JobFailed:
-            Type: Fail
-            Cause: Bioformats Scan Job Failed
-            Error: DescribeJob returned FAILED
-          GetFinalJobStatus:
-            Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusScanJob
-            InputPath: $.jobId
-            End: true
+            Resource: arn:aws:states:::batch:submitJob.sync
+            Parameters:
+              JobDefinition.$: $.syncEnv.job_definition
+              JobName.$: $.syncEnv.job_name
+              JobQueue.$: $.syncEnv.job_queue
+              Parameters.$: $.syncEnv.batch_parameters
+            ResultPath: $.batchJobDetails
+            End: True
 
     ExtractSM:
       name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ExtractSM
@@ -189,45 +144,26 @@ stepFunctions:
             Type: Task
             Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-registerFileset
             ResultPath: $.fileset_uuid
-            Next: SubmitJob
-          SubmitJob:
+            Next: PrepareEnvironment
+          PrepareEnvironment:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-submitExtractJob
-            ResultPath: $.jobId
-            Next: Wait30
-          Wait30:
-            Type: Wait
-            Seconds: 30
-            Next: GetJobStatus
-          GetJobStatus:
+            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prepareExtractEnvironment
+            ResultPath: $.syncEnv
+            Next: RunBatchJob
+          RunBatchJob:
             Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusExtractJob
-            InputPath: $.jobId
-            ResultPath: $.status
-            Next: IsJobComplete
-          IsJobComplete:
-            Type: Choice
-            Choices:
-              - Variable: $.status
-                StringEquals: FAILED
-                Next: JobFailed
-              - Variable: $.status
-                StringEquals: SUCCEEDED
-                Next: HandleRawStorageLevel
-            Default: Wait30
-          JobFailed:
-            Type: Fail
-            Cause: Bioformats Extract Job Failed
-            Error: DescribeJob returned FAILED
+            Resource: arn:aws:states:::batch:submitJob.sync
+            Parameters:
+              JobDefinition.$: $.syncEnv.job_definition
+              JobName.$: $.syncEnv.job_name
+              JobQueue.$: $.syncEnv.job_queue
+              Parameters.$: $.syncEnv.batch_parameters
+            ResultPath: $.batchJobDetails
+            Next: HandleRawStorageLevel
           HandleRawStorageLevel:
             Type: Task
             Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-handleRawStorageLevel
             ResultPath: null
-            Next: GetFinalJobStatus
-          GetFinalJobStatus:
-            Type: Task
-            Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-checkStatusExtractJob
-            InputPath: $.jobId
             End: true
 
 # TODO Revert to using stock serverless-step-functions (see package.json) if the

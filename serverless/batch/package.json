@@ -1,7 +1,7 @@
 {
   "devDependencies": {
     "serverless-python-requirements": "^4.1.1",
-    "serverless-step-functions": "dpwrussell/serverless-step-functions#keyname",
+    "serverless-step-functions": "dpwrussell/serverless-step-functions#minerva",
     "serverless-pseudo-parameters": "^2.1.0"
   }
 }
