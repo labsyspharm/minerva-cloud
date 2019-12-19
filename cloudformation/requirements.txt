@@ -1,2 +1,2 @@
 boto3==1.7.81
-ruamel.yaml=0.15.71
+ruamel.yaml

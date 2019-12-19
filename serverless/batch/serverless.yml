@@ -1,23 +1,23 @@
-service: ${file(${opt:config}):StackPrefix}-${file(${opt:config}):Stage}-serverless-batch
+service: ${file(${opt:configfile}):StackPrefix}-${file(${opt:configfile}):Stage}-serverless-batch
 
 provider:
   name: aws
-  region: ${file(${opt:config}):Region}
-  stage: ${file(${opt:config}):Stage}
+  region: ${file(${opt:configfile}):Region}
+  stage: ${file(${opt:configfile}):Stage}
   runtime: python3.6
   vpc:
     securityGroupIds:
       - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
       # Default SG for SSM
-      - ${file(${opt:config}):DefaultSecurityGroup}
+      - ${file(${opt:configfile}):DefaultSecurityGroup}
     # Private subnets with internet routing
-    subnetIds: ${file(${opt:config}):SubnetsPrivate}
+    subnetIds: ${file(${opt:configfile}):SubnetsPrivate}
   deploymentBucket:
-    name: ${file(${opt:config}):DeploymentBucket}
+    name: ${file(${opt:configfile}):DeploymentBucket}
   environment:
-    # TODO Inject these from minerva-configs
-    STACK_PREFIX: ${file(${opt:config}):StackPrefix}
-    STAGE: ${file(${opt:config}):Stage}
+    # TODO Inject these from minerva-configfiles
+    STACK_PREFIX: ${file(${opt:configfile}):StackPrefix}
+    STAGE: ${file(${opt:configfile}):Stage}
   iamRoleStatements:
     - Effect: Allow
       Action:

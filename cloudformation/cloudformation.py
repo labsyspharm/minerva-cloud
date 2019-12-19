@@ -89,16 +89,23 @@ def main(operation, stack, config):
     region = config['Region']
     prefix = config['StackPrefix']
     project_tag = config['ProjectTag']
+    aws_profile = config['Profile']
+    if aws_profile == 'default':
+        aws_profile = None
 
     # Select the appropriate cloudformation operation
-    cf = boto3.client('cloudformation', region_name=region)
-    if operation == 'create':
-        cf_method = cf.create_stack
-    elif operation == 'update':
-        cf_method = cf.update_stack
-    else:
+    session = boto3.Session(profile_name=aws_profile)
+    cf = session.client('cloudformation', region_name=region)
+    cf_methods = {
+        'create': cf.create_stack,
+        'update': cf.update_stack,
+        'delete': cf.delete_stack
+    }
+    if operation not in cf_methods.keys():
         print(f'Operation "{operation}" is not implemented')
         sys.exit(1)
+
+    cf_method = cf_methods[operation]
 
     # Build a prefixed name for this stack
     name = f'{prefix}-cf-{stack}'
@@ -123,22 +130,31 @@ def main(operation, stack, config):
     elif stack == 'batch':
         parameters = prepare_batch_parameters(config)
 
-    # Trigger the operation
-    response = cf_method(
-        StackName=name,
-        TemplateBody=template_body,
-        Parameters=shared_parameters + parameters,
-        Capabilities=[
-            'CAPABILITY_NAMED_IAM',
-        ],
-        Tags=[{
-            'Key': 'project',
-            'Value': project_tag
-        }]
-    )
+    if operation in ['create', 'update']:
+        # Trigger the operation
+        response = cf_method(
+            StackName=name,
+            TemplateBody=template_body,
+            Parameters=shared_parameters + parameters,
+            Capabilities=[
+                'CAPABILITY_NAMED_IAM',
+            ],
+            Tags=[{
+                'Key': 'project',
+                'Value': project_tag
+            }]
+        )
+    elif operation == 'delete':
+        response = cf_method(
+            StackName=name
+        )
 
-    stack_id = response['StackId']
-    print(f'Stack {stack} {operation} completed: {stack_id}')
+    print(response)
+
+    if 'StackId' in response:
+        stack_id = response['StackId']
+        print(f'Stack {stack} {operation} completed: {stack_id}')
+
 
 
 if __name__ == '__main__':

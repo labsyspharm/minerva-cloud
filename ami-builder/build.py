@@ -39,13 +39,17 @@ tags = [{
     'Key': 'project',
     'Value': config['ProjectTag']
 }]
+aws_profile = config['Profile']
+if aws_profile == 'default':
+    aws_profile = None
 
 # AMI output details
 NAME = '{}-{}-efs-{}'
 DESCRIPTION = 'Automatically mount the {} EFS share for {}-{}'
 
-ssm = boto3.client('ssm', region_name=region)
-ec2 = boto3.client('ec2', region_name=region)
+session = boto3.Session(profile_name=aws_profile)
+ssm = session.client('ssm', region_name=region)
+ec2 = session.client('ec2', region_name=region)
 
 # Get the ID of the EFS volume
 efs_id = ssm.get_parameter(

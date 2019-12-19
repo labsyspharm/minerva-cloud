@@ -88,21 +88,21 @@ python cloudformation.py create batch ../../minerva-configs/test/config.yml
 
 ```bash
 cd serverless/db
-serverless deploy --config ../../../minerva-configs/test/config.yml
+serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
 6. Deploy the batch serverless infrastructure
 
 ```bash
 cd serverless/batch
-serverless deploy --config ../../../minerva-configs/test/config.yml
+serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
 7. Deploy the api serverless infrastructure
 
 ```bash
 cd serverless/api
-serverless deploy --config ../../../minerva-configs/test/config.yml
+serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
 8. Run AWS lambda `initdb` method to initialise the database
