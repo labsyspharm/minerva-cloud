@@ -12,6 +12,12 @@ It is comprised of some cloudformation and serverless configurations.
 - A configuration file with these and some other properties.
 - A deployment bucket for serverless.
 
+## AWS Profile
+
+If you need to use a different aws profile from the default one, to be able to access aws resources,
+this can be setup with:
+- export AWS_PROFILE=<profile name>
+
 ## Configuration File
 
 ```YAML

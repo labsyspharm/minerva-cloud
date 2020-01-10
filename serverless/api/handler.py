@@ -127,7 +127,7 @@ def make_binary_response(code: int, body: np.ndarray) -> Dict[str, Any]:
     return {
         'statusCode': code,
         'headers': {
-            'Content-Type': 'image/png',
+            'Content-Type': 'image/jpeg',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Credentials': 'true'
         },
@@ -335,6 +335,18 @@ def _parse_channel_params(channel_path_param):
     }
 
 
+def _channels_json_to_params(channels):
+    params = []
+    for channel in channels:
+        params.append({
+            'index': int(channel["id"]),
+            'color': np.float32([c / 255 for c in _hex_to_bgr(channel["color"])]),
+            'min': np.float32(channel["min"]),
+            'max':  np.float32(channel["max"])
+        })
+    return params
+
+
 class Handler:
 
     def _has_permission(self, user: str, resource_type: str, resource: str,
@@ -375,6 +387,27 @@ class Handler:
         channels = [_parse_channel_params(param)
                     for param in channel_path_params]
 
+        return self._render_tile(uuid, x, y, z, t, level, channels)
+
+    @response(200)
+    def prerendered_tile(self, event, context):
+        uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(uuid)
+        self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
+
+        x = int(_event_path_param(event, 'x'))
+        y = int(_event_path_param(event, 'y'))
+        z = int(_event_path_param(event, 'z'))
+        t = int(_event_path_param(event, 't'))
+        level = int(_event_path_param(event, 'level'))
+        channel_group_uuid = _event_path_param(event, 'channel_group')
+
+        rendering_settings = self.client.get_image_channel_group(channel_group_uuid)
+        channels = _channels_json_to_params(rendering_settings.channels)
+
+        return self._render_tile(uuid, x, y, z, t, level, channels)
+
+    def _render_tile(self, uuid, x, y, z, t, level, channels):
         # Prepare for blending
         args = [(self.client, bucket.split(':')[-1], uuid, x, y, z, t,
                  channel['index'], level) for channel in channels]
@@ -401,8 +434,9 @@ class Handler:
         # CV2 requires 0 - 255 values
         composite *= 255
 
-        # Encode rendered image as PNG
-        return cv2.imencode('.png', composite)[1]
+        # Encode rendered image as JPG
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+        return cv2.imencode('.jpg', composite, encode_param)[1]
 
     @response(200)
     def render_region(self, event, context):
@@ -567,10 +601,11 @@ class Handler:
         # CV2 requires 0 - 255 values
         scaled *= 255
 
-        # Encode rendered image as PNG
-        return cv2.imencode('.png', scaled)[1]
+        # Encode rendered image as JPG
+        return cv2.imencode('.jpg', scaled)[1]
 
 
 handler = Handler()
 render_tile = handler.render_tile
 render_region = handler.render_region
+prerendered_tile = handler.prerendered_tile

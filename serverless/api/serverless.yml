@@ -1,5 +1,9 @@
 service: ${file(${opt:configfile}):StackPrefix}-${file(${opt:configfile}):Stage}-serverless-api
 
+package:
+  exclude:
+    - node_modules/**
+
 provider:
   name: aws
   region: ${file(${opt:configfile}):Region}
@@ -54,6 +58,20 @@ functions:
           method: GET
           cors: true
           path: /image/{uuid}/render-tile/{x}/{y}/{z}/{t}/{level}/{channels+}
+          contentHandling: CONVERT_TO_BINARY
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+
+  prerenderedTile:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prerenderedTile
+    handler: handler.prerendered_tile
+    events:
+      - http:
+          method: GET
+          cors: true
+          path: /image/{uuid}/prerendered-tile/{x}/{y}/{z}/{t}/{level}/{channel_group}
           contentHandling: CONVERT_TO_BINARY
           authorizer:
             type: COGNITO_USER_POOLS

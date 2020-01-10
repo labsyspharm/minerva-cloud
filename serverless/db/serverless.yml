@@ -1,5 +1,9 @@
 service: ${file(${opt:configfile}):StackPrefix}-${file(${opt:configfile}):Stage}-serverless-db
 
+package:
+  exclude:
+    - node_modules/**
+
 provider:
   name: aws
   region: ${file(${opt:configfile}):Region}
@@ -109,6 +113,19 @@ functions:
           method: POST
           cors: true
           path: /import
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  createRenderingSettings:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createRenderingSettings
+    handler: handler.create_rendering_settings
+    events:
+      - http:
+          method: POST
+          cors: true
+          path: /image/{uuid}/rendering_settings
           authorizer:
             type: COGNITO_USER_POOLS
             authorizerId:

@@ -14,6 +14,7 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from minerva_db.sql.api import Client
 from minerva_db.sql.api.utils import to_jsonapi
+from minerva_db.sql.models.renderingsettings import RenderingSettings
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -433,6 +434,25 @@ class Handler:
         return self.client.create_membership(group_uuid, user_uuid,
                                              membership_type)
 
+    @response(201)
+    def create_rendering_settings(self, event, context):
+        image_uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(image_uuid)
+        self._has_permission(self.user_uuid, 'Image', image_uuid, 'Write')
+
+        groups = self.body.get('groups')
+        for group in groups:
+            channels = group.get('channels')
+            label = group.get('label')
+            if 'id' not in group:
+                uuid = str(uuid4())
+                group['id'] = uuid
+                self.client.create_rendering_settings(uuid, image_uuid, channels, label)
+            else:
+                self.client.update_rendering_settings(group['id'], channels, label)
+
+        return self.body
+
     @response(200)
     def get_group(self, event, context):
         uuid = _event_path_param(event, 'uuid')
@@ -689,6 +709,14 @@ class Handler:
         return self.client.list_keys_in_fileset(uuid)
 
     @response(200)
+    def list_rendering_settings_for_image(self, event, context):
+        image_uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(image_uuid)
+        self._has_permission(self.user_uuid, 'Image', image_uuid, 'Read')
+        rendering_settings = self.client.list_rendering_settings(image_uuid)
+        return [r.as_dict() for r in rendering_settings]
+
+    @response(200)
     def update_repository(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
@@ -814,6 +842,7 @@ cognito_details = handler.cognito_details
 create_repository = handler.create_repository
 create_import = handler.create_import
 create_membership = handler.create_membership
+create_rendering_settings = handler.create_rendering_settings
 get_group = handler.get_group
 get_membership = handler.get_membership
 get_user = handler.get_user
