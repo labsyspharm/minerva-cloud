@@ -6,9 +6,12 @@ package:
 
 provider:
   name: aws
+  tags:
+    project: ${file(${opt:configfile}):ProjectTag}
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
   runtime: python3.6
+  memorySize: 2048
   vpc:
     securityGroupIds:
       - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
@@ -91,6 +94,7 @@ functions:
             type: COGNITO_USER_POOLS
             authorizerId:
               Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+
 
 plugins:
   - serverless-python-requirements

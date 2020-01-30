@@ -6,6 +6,8 @@ package:
 
 provider:
   name: aws
+  tags:
+    project: ${file(${opt:configfile}):ProjectTag}
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
   runtime: python3.6
