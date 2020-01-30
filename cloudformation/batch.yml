@@ -198,9 +198,9 @@ Resources:
     Properties:
       JobQueueName: !Sub ${StackPrefix}-${Stage}-queue
       ComputeEnvironmentOrder:
-        - ComputeEnvironment: !Ref SpotEnv
-          Order: 1
         - ComputeEnvironment: !Ref Ec2Env
+          Order: 1
+        - ComputeEnvironment: !Ref SpotEnv
           Order: 2
       Priority: 10
 
@@ -229,7 +229,7 @@ Resources:
           - sync
           - Ref::s3uri
           - Ref::dir
-        Memory: 256
+        Memory: 512
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
         Image: sorgerlab/awscli:0.0.1
@@ -326,10 +326,10 @@ Resources:
           - Ref::reader_version
           - Ref::bucket
           - Ref::fileset_uuid
-        Memory: 8192
+        Memory: 3900
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
-        Image: sorgerlab/bfextractor:0.0.2
+        Image: sorgerlab/bfextractor:0.0.3
       RetryStrategy:
         Attempts: 2
 

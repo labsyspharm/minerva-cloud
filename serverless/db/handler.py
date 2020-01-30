@@ -154,12 +154,20 @@ class AuthError(Exception):
     pass
 
 
+global_sessionmaker = None
+
+
 def _setup_db():
+    global global_sessionmaker
+    if global_sessionmaker is not None:
+        return global_sessionmaker
+
     connection_string = URL('postgresql', username=db_user,
                             password=db_password, host=db_host, port=db_port,
                             database=db_name)
     engine = create_engine(connection_string)
-    return sessionmaker(bind=engine)
+    global_sessionmaker = sessionmaker(bind=engine)
+    return global_sessionmaker
 
 
 DBSession = _setup_db()
@@ -253,6 +261,8 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
             except Exception as e:
                 logger.exception('Unexpected server error')
                 return make_response(500, {'error': str(e)})
+            finally:
+                self.session.close()
 
         return wrapped
     return wrapper

@@ -1,5 +1,5 @@
 from typing import Any, Callable, Dict, Union, List
-from functools import wraps
+from functools import wraps, lru_cache
 import os
 from multiprocessing.pool import ThreadPool
 from io import BytesIO
@@ -19,6 +19,8 @@ from sqlalchemy.orm import sessionmaker
 import xml.etree.ElementTree as ET
 from minerva_db.sql.api import Client
 from minerva_lib import render
+import time
+import blosc
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -71,12 +73,20 @@ class AspectRatioError(Exception):
     pass
 
 
+global_sessionmaker = None
+
+
 def _setup_db():
+    global global_sessionmaker
+    if global_sessionmaker is not None:
+        return global_sessionmaker
+
     connection_string = URL('postgresql', username=db_user,
                             password=db_password, host=db_host, port=db_port,
                             database=db_name)
     engine = create_engine(connection_string)
-    return sessionmaker(bind=engine)
+    global_sessionmaker = sessionmaker(bind=engine)
+    return global_sessionmaker
 
 
 DBSession = _setup_db()
@@ -182,6 +192,8 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
             except Exception as e:
                 logger.exception(e)
                 return make_response(500, {'error': str(e)})
+            finally:
+                self.session.close()
 
         return wrapped
     return wrapper
@@ -278,28 +290,28 @@ def handle_missing_tile(client, uuid, x, y, z, t, c, level, key):
         raise Exception(f'Internal Server Error: Requested tile ({key}) not'
                         'found, but should exist')
 
-
 def _s3_get(client, bucket, uuid, x, y, z, t, c, level):
     '''Fetch a specific PNG from S3 and decode'''
 
+    start = time.time()
     # Use the indices to build the key
-    key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}.png'
+    key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}.zstd.blosc'
 
     try:
         obj = boto3.resource('s3').Object(bucket, key)
         body = obj.get()['Body']
         data = body.read()
-        stream = BytesIO(data)
-        image = cv2.imdecode(np.fromstring(stream.getvalue(),
-                                           dtype=np.uint8), 0)
+        t = round((time.time() - start) * 1000)
+        logger.info("%s - Fetch COMPLETE %s ms", key, str(t))
+        image = blosc.unpack_array(data)
         return image
 
     except ClientError as e:
+        logger.error(e)
         if e.response['Error']['Code'] == 'NoSuchKey':
             handle_missing_tile(client, uuid, x, y, z, t, c, level, key)
         else:
             raise e
-
 
 def _hex_to_bgr(color):
     '''Convert hex color to BGR'''
@@ -402,12 +414,19 @@ class Handler:
         level = int(_event_path_param(event, 'level'))
         channel_group_uuid = _event_path_param(event, 'channel_group')
 
+        logger.info("Render tile L=%s X=%s Y=%s CG_uuid=%s START", level, x, y, channel_group_uuid)
+
+        return self._prerendered_tile_cached(uuid, x, y, z, t, level, channel_group_uuid)
+
+    @lru_cache(maxsize=256)
+    def _prerendered_tile_cached(self, uuid, x, y, z, t, level, channel_group_uuid):
         rendering_settings = self.client.get_image_channel_group(channel_group_uuid)
         channels = _channels_json_to_params(rendering_settings.channels)
 
         return self._render_tile(uuid, x, y, z, t, level, channels)
 
     def _render_tile(self, uuid, x, y, z, t, level, channels):
+        total_start = time.time()
         # Prepare for blending
         args = [(self.client, bucket.split(':')[-1], uuid, x, y, z, t,
                  channel['index'], level) for channel in channels]
@@ -416,27 +435,40 @@ class Handler:
         # Either prepare in parallel (might be worth it as we get more vCPUs
         # with higher memory reservations) then blend in a thread safe manner
         # or at least start processing each tile as it comes in
+        # UPDATE: Tried starting blending parallel with S3 downloads, but it
+        # didn't gain speed, it was actually a bit slower..
 
         # Fetch raw tiles in parallel
+        logger.info("Start fetching images for channel tiles from S3")
+        start = time.time()
         try:
             pool = ThreadPool(processes=len(channels))
             images = pool.starmap(_s3_get, args)
         finally:
             pool.close()
 
+        t = round((time.time() - start) * 1000)
+        logger.info("All channel tiles fetched in %s ms", t)
         # Update channel dictionary with image data
         for channel, image in zip(channels, images):
             channel['image'] = image
 
         # Blend the raw tiles
+        composite_start = time.time()
         composite = render.composite_channels(channels)
+        composite_time = round((time.time() - composite_start) * 1000)
+        logger.info("composite_channels time: %s ms", composite_time)
 
         # CV2 requires 0 - 255 values
         composite *= 255
 
         # Encode rendered image as JPG
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-        return cv2.imencode('.jpg', composite, encode_param)[1]
+        img = cv2.imencode('.jpg', composite, encode_param)[1]
+        print(len(img))
+        total_time = round((time.time() - total_start) * 1000)
+        logger.info("Render tile L=%s X=%s Y=%s DONE, total time: %s ms", level, x, y, total_time)
+        return img
 
     @response(200)
     def render_region(self, event, context):
