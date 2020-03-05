@@ -102,5 +102,12 @@ plugins:
   - serverless-apigwy-binary
 custom:
   pythonRequirements:
+    useDownloadCache: false
+    useStaticCache: false
     dockerizePip: non-linux
     dockerFile: Dockerfile
+    slim: true
+    strip: false
+    slimPatterns:
+      - "**/cv2/data/haarcascade*.xml"
+      - "**/tests/*"

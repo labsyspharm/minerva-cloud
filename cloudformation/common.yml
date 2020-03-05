@@ -192,6 +192,8 @@ Resources:
                 Resource:
                   - !GetAtt RawBucket.Arn
                   - !Sub ${RawBucket.Arn}/*
+                  - !GetAtt TileBucket.Arn
+                  - !Sub ${TileBucket.Arn}/*
 
   # SSM
   EFSID:

@@ -11,7 +11,7 @@ from botocore.exceptions import ClientError
 import re
 import json
 from datetime import date, datetime
-import cv2
+import simplejpeg
 import numpy as np
 from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
@@ -20,7 +20,7 @@ import xml.etree.ElementTree as ET
 from minerva_db.sql.api import Client
 from minerva_lib import render
 import time
-import blosc
+import imageio
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -38,26 +38,6 @@ PATH_ERROR = ('Path must conform to format:'
 
 bucket = ssm.get_parameter(
     Name='/{}/{}/common/S3BucketTileARN'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_host = ssm.get_parameter(
-    Name='/{}/{}/common/DBHost'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_port = ssm.get_parameter(
-    Name='/{}/{}/common/DBPort'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_user = ssm.get_parameter(
-    Name='/{}/{}/common/DBUser'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_password = ssm.get_parameter(
-    Name='/{}/{}/common/DBPassword'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_name = ssm.get_parameter(
-    Name='/{}/{}/common/DBName'.format(STACK_PREFIX, STAGE)
 )['Parameter']['Value']
 
 
@@ -81,10 +61,31 @@ def _setup_db():
     if global_sessionmaker is not None:
         return global_sessionmaker
 
+    response = ssm.get_parameters(
+        Names=[
+            '/{}/{}/common/DBHost'.format(STACK_PREFIX, STAGE),
+            '/{}/{}/common/DBPort'.format(STACK_PREFIX, STAGE),
+            '/{}/{}/common/DBUser'.format(STACK_PREFIX, STAGE),
+            '/{}/{}/common/DBPassword'.format(STACK_PREFIX, STAGE),
+            '/{}/{}/common/DBName'.format(STACK_PREFIX, STAGE)
+        ]
+    )
+    def get_value(name):
+        for p in response['Parameters']:
+            if p['Name'].endswith(name):
+                return p['Value']
+        raise ValueError('Value not found for Parameter ' + name)
+
+    db_host = get_value('DBHost')
+    db_port = get_value('DBPort')
+    db_user = get_value('DBUser')
+    db_password = get_value('DBPassword')
+    db_name = get_value('DBName')
+
     connection_string = URL('postgresql', username=db_user,
                             password=db_password, host=db_host, port=db_port,
                             database=db_name)
-    engine = create_engine(connection_string)
+    engine = create_engine(connection_string, pool_size=1)
     global_sessionmaker = sessionmaker(bind=engine)
     return global_sessionmaker
 
@@ -295,15 +296,17 @@ def _s3_get(client, bucket, uuid, x, y, z, t, c, level):
 
     start = time.time()
     # Use the indices to build the key
-    key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}.zstd.blosc'
+    key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}.png'
 
     try:
+        logger.info("Fetching tile %s/%s", bucket, key)
         obj = boto3.resource('s3').Object(bucket, key)
         body = obj.get()['Body']
         data = body.read()
         t = round((time.time() - start) * 1000)
         logger.info("%s - Fetch COMPLETE %s ms", key, str(t))
-        image = blosc.unpack_array(data)
+        stream = BytesIO(data)
+        image = imageio.imread(stream, format="png")
         return image
 
     except ClientError as e:
@@ -312,6 +315,9 @@ def _s3_get(client, bucket, uuid, x, y, z, t, c, level):
             handle_missing_tile(client, uuid, x, y, z, t, c, level, key)
         else:
             raise e
+    except Exception as e:
+        logger.error(e)
+        raise e
 
 def _hex_to_bgr(color):
     '''Convert hex color to BGR'''
@@ -418,7 +424,7 @@ class Handler:
 
         return self._prerendered_tile_cached(uuid, x, y, z, t, level, channel_group_uuid)
 
-    @lru_cache(maxsize=256)
+    @lru_cache(maxsize=512)
     def _prerendered_tile_cached(self, uuid, x, y, z, t, level, channel_group_uuid):
         rendering_settings = self.client.get_image_channel_group(channel_group_uuid)
         channels = _channels_json_to_params(rendering_settings.channels)
@@ -461,10 +467,12 @@ class Handler:
 
         # CV2 requires 0 - 255 values
         composite *= 255
+        composite = composite.astype(np.uint8, copy=False)
 
         # Encode rendered image as JPG
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-        img = cv2.imencode('.jpg', composite, encode_param)[1]
+        #encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+        #img = cv2.imencode('.jpg', composite, encode_param)[1]
+        img = simplejpeg.encode_jpeg(composite, quality=90, colorspace="BGR")
         print(len(img))
         total_time = round((time.time() - total_start) * 1000)
         logger.info("Render tile L=%s X=%s Y=%s DONE, total time: %s ms", level, x, y, total_time)
@@ -630,11 +638,13 @@ class Handler:
         else:
             scaled = composite
 
-        # CV2 requires 0 - 255 values
+        #  requires 0 - 255 values
         scaled *= 255
+        scaled = scaled.astype(np.uint8, copy=False)
 
         # Encode rendered image as JPG
-        return cv2.imencode('.jpg', scaled)[1]
+        img = simplejpeg.encode_jpeg(scaled, quality=90, colorspace="BGR")
+        return img
 
 
 handler = Handler()

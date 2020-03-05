@@ -120,6 +120,32 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
+  createImage:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createImage
+    handler: handler.create_image
+    events:
+      - http:
+          method: POST
+          cors: true
+          path: /image
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  createMetadata:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createMetadata
+    handler: handler.create_metadata
+    events:
+      - http:
+          method: POST
+          cors: true
+          path: /image/{uuid}/metadata
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
   createRenderingSettings:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createRenderingSettings
     handler: handler.create_rendering_settings
@@ -263,18 +289,18 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
-  listKeysInImport:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listKeysInImport
-    handler: handler.list_keys_in_import
-    events:
-      - http:
-          method: GET
-          cors: true
-          path: /import/{uuid}/keys
-          authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId:
-              Ref: ApiGatewayAuthorizer
+#  listKeysInImport:
+#    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listKeysInImport
+#    handler: handler.list_keys_in_import
+#    events:
+#      - http:
+#          method: GET
+#          cors: true
+#          path: /import/{uuid}/keys
+#          authorizer:
+#            type: COGNITO_USER_POOLS
+#            authorizerId:
+#              Ref: ApiGatewayAuthorizer
 
   listImagesInFileset:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listImagesInFileset
@@ -289,14 +315,40 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
-  listKeysInFileset:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listKeysInFileset
-    handler: handler.list_keys_in_fileset
+  listImagesInRepository:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listImagesInRepository
+    handler: handler.list_images_in_repository
     events:
       - http:
           method: GET
           cors: true
-          path: /fileset/{uuid}/keys
+          path: /repository/{uuid}/images
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+#  listKeysInFileset:
+#    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listKeysInFileset
+#    handler: handler.list_keys_in_fileset
+#    events:
+#      - http:
+#          method: GET
+#          cors: true
+#          path: /fileset/{uuid}/keys
+#          authorizer:
+#            type: COGNITO_USER_POOLS
+#            authorizerId:
+#              Ref: ApiGatewayAuthorizer
+
+  listIncompleteImports:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listIncompleteImports
+    handler: handler.list_incomplete_imports
+    events:
+      - http:
+          method: GET
+          cors: true
+          path: /import/incomplete
           authorizer:
             type: COGNITO_USER_POOLS
             authorizerId:
@@ -367,6 +419,32 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
+  deleteImage:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-deleteImage
+    handler: handler.delete_image
+    events:
+      - http:
+          method: DELETE
+          cors: true
+          path: /image/{uuid}
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  restoreImage:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-restoreImage
+    handler: handler.delete_image
+    events:
+      - http:
+          method: PUT
+          cors: true
+          path: /image/{uuid}/restore
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
   # Internal
   initDb:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-initDb
@@ -392,18 +470,18 @@ functions:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-createUser
     handler: internal.create_user
 
-  #
-  # list_repositories_for_user:
-  #   handler: handler.list_repositories_for_user
-  #   events:
-  #     - http:
-  #         method: GET
-  #         cors: true
-  #         path: /repository
-  #         authorizer:
-  #           # TODO Read from SSM
-  #           arn: arn:aws:cognito-idp:us-east-1:292075781285:userpool/us-east-1_d9h9zgWpx
-  #
+  list_repositories_for_user:
+   handler: handler.list_repositories_for_user
+   events:
+     - http:
+         method: GET
+         cors: true
+         path: /repository
+         authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
   # list_users_in_group:
   #   handler: handler.list_users_in_group
   #   events:
@@ -514,6 +592,7 @@ plugins:
   - serverless-python-requirements
   - serverless-pseudo-parameters
   - serverless-apigw-binary
+  - serverless-plugin-split-stacks
 custom:
   pythonRequirements:
     dockerizePip: non-linux
@@ -521,3 +600,9 @@ custom:
   apigwBinary:
     types:
       - "image/png"
+
+  splitStacks:
+    nestedStackCount: 20
+    perFunction: false
+    perType: false
+    perGroupFunction: true

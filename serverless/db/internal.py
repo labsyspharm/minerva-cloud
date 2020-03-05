@@ -178,9 +178,19 @@ def add_keys_to_import(event, context):
 @in_session
 def set_fileset_complete(event, context):
     fileset_uuid = event['fileset_uuid']
-    images = event['images']
-    client.update_fileset(fileset_uuid, complete=True, images=images)
+    images = None
+    if 'images' in event:
+        images = event['images']
 
+    complete = False
+    if 'complete' in event and event['complete'] in ['True', 'true', '1']:
+        complete = True
+
+    progress = None
+    if 'progress' in event:
+        progress = event['progress']
+
+    client.update_fileset(fileset_uuid, complete=complete, images=images, progress=progress)
 
 @in_session
 def create_user(event, context):
@@ -190,6 +200,8 @@ def create_user(event, context):
     if event['triggerSource'] in ['PreSignUp_AdminCreateUser',
                                   'PostConfirmation_ConfirmSignUp']:
         uuid = event['userName']
+        email = event['request']['userAttributes']['email']
+        print(event)
         _validate_uuid(uuid)
 
         # Check if the user already exists. Cognito seems to have a retry
@@ -203,6 +215,6 @@ def create_user(event, context):
             print(f'User already exists, skipping creation: {uuid}')
 
         print(f'Creating user: {uuid}')
-        client.create_user(uuid)
+        client.create_user(uuid, name=email)
 
     return event

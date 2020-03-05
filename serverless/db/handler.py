@@ -14,7 +14,6 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from minerva_db.sql.api import Client
 from minerva_db.sql.api.utils import to_jsonapi
-from minerva_db.sql.models.renderingsettings import RenderingSettings
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -108,47 +107,6 @@ write_policy = '''{{
     ]
 }}'''
 
-# Get raw bucket
-raw_bucket = ssm.get_parameter(
-    Name='/{}/{}/common/S3BucketRawARN'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-tile_bucket = ssm.get_parameter(
-    Name='/{}/{}/common/S3BucketTileARN'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_host = ssm.get_parameter(
-    Name='/{}/{}/common/DBHost'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_port = ssm.get_parameter(
-    Name='/{}/{}/common/DBPort'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_user = ssm.get_parameter(
-    Name='/{}/{}/common/DBUser'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_password = ssm.get_parameter(
-    Name='/{}/{}/common/DBPassword'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-db_name = ssm.get_parameter(
-    Name='/{}/{}/common/DBName'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-sync_sfn = ssm.get_parameter(
-    Name='/{}/{}/batch/S3EFSSyncStepARN'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-s3_assume_role_read = ssm.get_parameter(
-    Name='/{}/{}/common/AssumedS3RoleReadARN'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
-s3_assume_role_write = ssm.get_parameter(
-    Name='/{}/{}/common/AssumedS3RoleWriteARN'.format(STACK_PREFIX, STAGE)
-)['Parameter']['Value']
-
 
 class AuthError(Exception):
     pass
@@ -161,6 +119,27 @@ def _setup_db():
     global global_sessionmaker
     if global_sessionmaker is not None:
         return global_sessionmaker
+
+    response = ssm.get_parameters(
+        Names=[
+            '/{}/{}/common/DBHost'.format(STACK_PREFIX, STAGE),
+            '/{}/{}/common/DBPort'.format(STACK_PREFIX, STAGE),
+            '/{}/{}/common/DBUser'.format(STACK_PREFIX, STAGE),
+            '/{}/{}/common/DBPassword'.format(STACK_PREFIX, STAGE),
+            '/{}/{}/common/DBName'.format(STACK_PREFIX, STAGE)
+        ]
+    )
+    def get_value(name):
+        for p in response['Parameters']:
+            if p['Name'].endswith(name):
+                return p['Value']
+        raise ValueError('Value not found for Parameter ' + name)
+
+    db_host = get_value('DBHost')
+    db_port = get_value('DBPort')
+    db_user = get_value('DBUser')
+    db_password = get_value('DBPassword')
+    db_name = get_value('DBName')
 
     connection_string = URL('postgresql', username=db_user,
                             password=db_password, host=db_host, port=db_port,
@@ -278,7 +257,10 @@ def _event_path(event):
 
 def _event_body(event):
     if 'body' in event and event['body'] is not None:
-        return json.loads(event['body'])
+        try:
+            return json.loads(event['body'])
+        except Exception:
+            return event['body']
     return {}
 
 
@@ -328,14 +310,52 @@ def _validate_permission(p):
 
 
 class Handler:
-    # @classmethod
-    # def get_handler(cls, *args, **kwargs):
-    #     def handler(event, context):
-    #         return cls(*args, **kwargs).handle(event, context)
-    #     return handler
-    #
     def __init__(self):
         self.count = 0
+
+    def lazy_property(fn):
+        '''Decorator that makes a property lazy-evaluated.
+        '''
+        attr_name = '_lazy_' + fn.__name__
+
+        @property
+        def _lazy_property(self):
+            if not hasattr(self, attr_name):
+                setattr(self, attr_name, fn(self))
+            return getattr(self, attr_name)
+
+        return _lazy_property
+
+    # Get raw bucket
+    @lazy_property
+    def raw_bucket(self):
+        return ssm.get_parameter(
+            Name='/{}/{}/common/S3BucketRawARN'.format(STACK_PREFIX, STAGE)
+            )['Parameter']['Value']
+
+    @lazy_property
+    def tile_bucket(self):
+        return ssm.get_parameter(
+            Name='/{}/{}/common/S3BucketTileARN'.format(STACK_PREFIX, STAGE)
+            )['Parameter']['Value']
+
+    @lazy_property
+    def sync_sfn(self):
+        return ssm.get_parameter(
+            Name='/{}/{}/batch/S3EFSSyncStepARN'.format(STACK_PREFIX, STAGE)
+            )['Parameter']['Value']
+
+    @lazy_property
+    def s3_assume_role_read(selfs):
+        return ssm.get_parameter(
+            Name='/{}/{}/common/AssumedS3RoleReadARN'.format(STACK_PREFIX, STAGE)
+            )['Parameter']['Value']
+
+    @lazy_property
+    def s3_assume_role_write(self):
+        return ssm.get_parameter(
+            Name='/{}/{}/common/AssumedS3RoleWriteARN'.format(STACK_PREFIX, STAGE)
+            )['Parameter']['Value']
 
     def _has_permission(self, user: str, resource_type: str, resource: str,
                         permission: str):
@@ -422,6 +442,15 @@ class Handler:
                                              raw_storage)
 
     @response(201)
+    def create_image(self, event, context):
+        name = self.body['name']
+        repository_uuid = self.body['repository_uuid']
+        pyramid_levels = self.body['pyramid_levels']
+        _validate_name(name)
+        uuid = str(uuid4())
+        return self.client.create_image(uuid, name, pyramid_levels, fileset_uuid=None, repository_uuid=repository_uuid)
+
+    @response(201)
     def create_import(self, event, context):
         name = self.body['name']
         repository_uuid = self.body['repository_uuid']
@@ -443,6 +472,30 @@ class Handler:
         self._is_member(group_uuid, self.user_uuid, 'Owner')
         return self.client.create_membership(group_uuid, user_uuid,
                                              membership_type)
+
+    @response(200)
+    def create_metadata(self, event, context):
+        image_uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(image_uuid)
+        self._has_permission(self.user_uuid, 'Image', image_uuid, 'Write')
+
+        # Check that some basic values are found in xml
+        # TODO ideally validate metadata according to OME schema
+        e_root = ET.fromstring(self.body)
+        e_image = e_root.find('ome:Image', {'ome': OME_NS})
+        if e_image is None:
+            raise ValueError('Invalid metadata: missing Image:' + image_uuid)
+        e_image.set('ID', 'Image:{}'.format(image_uuid))
+        e_pixels = e_image.find('ome:Pixels', {'ome': OME_NS})
+        if e_pixels is None:
+            raise ValueError('Invalid metadata: missing Pixels')
+        size_x = e_pixels.get('SizeX')
+        size_y = e_pixels.get('SizeY')
+        if size_x is None or size_y is None or size_x < 0 or size_y < 0:
+            raise ValueError('Invalid metadata: missing SizeX or SizeY')
+
+        bucket = self.tile_bucket.split(':')[-1]
+        s3.put_object(Bucket=bucket, Key=image_uuid + '/metadata.xml', Body=ET.tostring(e_root))
 
     @response(201)
     def create_rendering_settings(self, event, context):
@@ -521,13 +574,13 @@ class Handler:
 
         # TODO Better session name?
         response = sts.assume_role(
-            RoleArn=s3_assume_role_write,
+            RoleArn=self.s3_assume_role_write,
             RoleSessionName='{}@{}'.format(self.user_uuid, uuid)[:64],
-            Policy=write_policy.format(raw_bucket, uuid)
+            Policy=write_policy.format(self.raw_bucket, uuid)
         )
 
         return to_jsonapi({
-            'url': 's3://{}/{}/'.format(raw_bucket.split(':')[-1], uuid),
+            'url': 's3://{}/{}/'.format(self.raw_bucket.split(':')[-1], uuid),
             'credentials': response['Credentials']
         })
 
@@ -550,7 +603,7 @@ class Handler:
             # TODO Ensure the prefix is no longer writeable before processing
             # TODO Record the execution ARN somewhere for monitoring
             sfn.start_execution(
-                stateMachineArn=sync_sfn,
+                stateMachineArn=self.sync_sfn,
                 input=json.dumps({
                   'import_uuid': uuid
                 })
@@ -616,19 +669,24 @@ class Handler:
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
 
-        bucket = tile_bucket.split(':')[-1]
+        bucket = self.tile_bucket.split(':')[-1]
 
         image = self.client.get_image(uuid)
+        bucket_key = uuid
         fileset_uuid = image['data']['fileset_uuid']
-        fileset = self.client.get_fileset(fileset_uuid)
+        if fileset_uuid is not None:
+            bucket_key = fileset_uuid
+            fileset = self.client.get_fileset(fileset_uuid)
 
-        if fileset['data']['complete'] is not True:
-            raise ValueError(
-                f'Fileset has not had metadata extracted yet: {fileset_uuid}'
-            )
+            if fileset['data']['complete'] is not True:
+                raise ValueError(
+                    f'Fileset has not had metadata extracted yet: {fileset_uuid}'
+                )
+
+
 
         obj = boto3.resource('s3').Object(bucket,
-                                          f'{fileset_uuid}/metadata.xml')
+                                          f'{bucket_key}/metadata.xml')
         body = obj.get()['Body']
         data = body.read()
         stream = BytesIO(data)
@@ -664,22 +722,19 @@ class Handler:
     def get_image_credentials(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
-        self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
-        image = self.client.get_image(uuid)
-        fileset_uuid = image['data']['fileset_uuid']
+        self._has_permission(self.user_uuid, 'Image', uuid, 'Write')
 
         # TODO Better session name?
         response = sts.assume_role(
-            RoleArn=s3_assume_role_read,
+            RoleArn=self.s3_assume_role_write,
             RoleSessionName='{}@{}'.format(self.user_uuid, uuid)[:64],
-            Policy=read_policy.format(tile_bucket, uuid, fileset_uuid)
+            Policy=write_policy.format(self.tile_bucket, uuid)
         )
 
-        tile_bucket_name = tile_bucket.split(':')[-1]
+        tile_bucket_name = self.tile_bucket.split(':')[-1]
 
         return to_jsonapi({
             'image_url': f's3://{tile_bucket_name}/{uuid}/',
-            'fileset_url': f's3://{tile_bucket_name}/{fileset_uuid}/',
             'credentials': response['Credentials']
         })
 
@@ -712,11 +767,22 @@ class Handler:
         return self.client.list_images_in_fileset(uuid)
 
     @response(200)
+    def list_images_in_repository(self, event, context):
+        uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(uuid)
+        self._has_permission(self.user_uuid, 'Repository', uuid, 'Read')
+        return self.client.list_images_in_repository(uuid)
+
+    @response(200)
     def list_keys_in_fileset(self, event, context):
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Fileset', uuid, 'Read')
         return self.client.list_keys_in_fileset(uuid)
+
+    @response(200)
+    def list_incomplete_imports(self, event, context):
+        return self.client.list_incomplete_imports()
 
     @response(200)
     def list_rendering_settings_for_image(self, event, context):
@@ -756,7 +822,25 @@ class Handler:
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Repository', uuid, 'Admin')
+        images = self.client.list_images_in_repository(uuid)
+        if len(images["data"]) > 0:
+            raise KeyError("Can not delete non-empty repository!")
+
         return self.client.delete_repository(uuid)
+
+    @response(204)
+    def delete_image(self, event, context):
+        uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(uuid)
+        self._has_permission(self.user_uuid, 'Image', uuid, 'Admin')
+        return self.client.delete_image(uuid)
+
+    @response(204)
+    def restore_image(self, event, context):
+        uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(uuid)
+        self._has_permission(self.user_uuid, 'Image', uuid, 'Admin')
+        return self.client.restore_image(uuid)
 
     @response(204)
     def delete_membership(self, event, context):
@@ -781,10 +865,10 @@ class Handler:
     # def list_files_in_import(self, event, context):
     #     pass
     #
-    # @response(200)
-    # def list_repositories_for_user(self, event, context):
-    #     user = _event_user(event)
-    #     return client.list_repositories_for_user(user)
+    @response(200)
+    def list_repositories_for_user(self, event, context):
+        user = _event_user(event)
+        return self.client.list_repositories_for_user(user)
     #
     # @response(200)
     # def list_users_in_group(self, event, context):
@@ -850,9 +934,11 @@ handler = Handler()
 create_group = handler.create_group
 cognito_details = handler.cognito_details
 create_repository = handler.create_repository
+create_image = handler.create_image
 create_import = handler.create_import
 create_membership = handler.create_membership
 create_rendering_settings = handler.create_rendering_settings
+create_metadata = handler.create_metadata
 get_group = handler.get_group
 get_membership = handler.get_membership
 get_user = handler.get_user
@@ -867,9 +953,14 @@ list_imports_in_repository = handler.list_imports_in_repository
 list_filesets_in_import = handler.list_filesets_in_import
 list_keys_in_import = handler.list_keys_in_import
 list_images_in_fileset = handler.list_images_in_fileset
+list_images_in_repository = handler.list_images_in_repository
 list_keys_in_fileset = handler.list_keys_in_fileset
+list_repositories_for_user = handler.list_repositories_for_user
+list_incomplete_imports = handler.list_incomplete_imports
 update_membership = handler.update_membership
 update_import = handler.update_import
 update_repository = handler.update_repository
 delete_repository = handler.delete_repository
 delete_membership = handler.delete_membership
+delete_image = handler.delete_image
+restore_image = handler.restore_image
