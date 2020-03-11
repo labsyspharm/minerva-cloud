@@ -100,7 +100,12 @@ plugins:
   - serverless-python-requirements
   - serverless-pseudo-parameters
   - serverless-apigwy-binary
+
 custom:
+  apigwBinary:
+    types:
+      - "image/png"
+      - "image/jpeg"
   pythonRequirements:
     useDownloadCache: false
     useStaticCache: false

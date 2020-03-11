@@ -1,10 +1,13 @@
+import logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
 from typing import Any, Callable, Dict, Union, List
 from functools import wraps, lru_cache
 import os
-from multiprocessing.pool import ThreadPool
+from multiprocessing.dummy import Pool as ThreadPool
 from io import BytesIO
 import base64
-import logging
 import boto3
 import math
 from botocore.exceptions import ClientError
@@ -21,9 +24,6 @@ from minerva_db.sql.api import Client
 from minerva_lib import render
 import time
 import imageio
-
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 STACK_PREFIX = os.environ['STACK_PREFIX']
 STAGE = os.environ['STAGE']
@@ -304,9 +304,10 @@ def _s3_get(client, bucket, uuid, x, y, z, t, c, level):
         body = obj.get()['Body']
         data = body.read()
         t = round((time.time() - start) * 1000)
-        logger.info("%s - Fetch COMPLETE %s ms", key, str(t))
+
         stream = BytesIO(data)
         image = imageio.imread(stream, format="png")
+        logger.info("%s - Fetch COMPLETE %s ms", key, str(t))
         return image
 
     except ClientError as e:
@@ -448,7 +449,7 @@ class Handler:
         logger.info("Start fetching images for channel tiles from S3")
         start = time.time()
         try:
-            pool = ThreadPool(processes=len(channels))
+            pool = ThreadPool(len(channels))
             images = pool.starmap(_s3_get, args)
         finally:
             pool.close()
@@ -619,7 +620,7 @@ class Handler:
 
         # Fetch raw tiles in parallel
         try:
-            pool = ThreadPool(processes=len(args))
+            pool = ThreadPool(len(args))
             images = pool.starmap(_s3_get, args)
         finally:
             pool.close()

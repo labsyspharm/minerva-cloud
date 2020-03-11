@@ -11,6 +11,8 @@ provider:
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
   runtime: python3.6
+  memorySize: 512
+  timeout: 10
   vpc:
     securityGroupIds:
       - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
@@ -432,6 +434,19 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
+  deleteGrant:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-deleteGrant
+    handler: handler.delete_grant
+    events:
+      - http:
+          method: DELETE
+          cors: true
+          path: /grant/resource/{uuid}/subject/{subject_uuid}
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
   restoreImage:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-restoreImage
     handler: handler.delete_image
@@ -471,6 +486,7 @@ functions:
     handler: internal.create_user
 
   list_repositories_for_user:
+   name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listRepositoriesForUser
    handler: handler.list_repositories_for_user
    events:
      - http:
@@ -478,6 +494,45 @@ functions:
          cors: true
          path: /repository
          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  listGrantsForRepository:
+   name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listGrantsForRepository
+   handler: handler.list_grants_for_repository
+   events:
+     - http:
+         method: GET
+         cors: true
+         path: /repository/{uuid}/grants
+         authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  findUser:
+   name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-findUser
+   handler: handler.find_user
+   events:
+     - http:
+         method: GET
+         cors: true
+         path: /user/find/{search}
+         authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  findGroup:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-findGroup
+    handler: handler.find_group
+    events:
+      - http:
+          method: GET
+          cors: true
+          path: /group/find/{search}
+          authorizer:
             type: COGNITO_USER_POOLS
             authorizerId:
               Ref: ApiGatewayAuthorizer
@@ -507,16 +562,18 @@ functions:
   #
   # # TODO Use /grant and all query parameters?
   # # Or /grant/{resource}/{grantee}?
-  # grant_repository_to_user:
-  #   handler: handler.grant_repository_to_user
-  #   events:
-  #     - http:
-  #         method: POST
-  #         cors: true
-  #         path: /repository/{uuid}/grant/user/{grantee}
-  #         authorizer:
-  #           # TODO Read from SSM
-  #           arn: arn:aws:cognito-idp:us-east-1:292075781285:userpool/us-east-1_d9h9zgWpx
+  grantResourceToUser:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-grantResourceToUser
+    handler: handler.grant_resource_to_user
+    events:
+       - http:
+          method: POST
+          cors: true
+          path: /grant
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
 
 
 resources:
@@ -595,14 +652,19 @@ plugins:
   - serverless-plugin-split-stacks
 custom:
   pythonRequirements:
+    useDownloadCache: false
+    useStaticCache: false
+    invalidateCaches: true
     dockerizePip: non-linux
 
   apigwBinary:
     types:
       - "image/png"
+      - "image/jpeg"
 
   splitStacks:
-    nestedStackCount: 20
+    nestedStackCount: 5
     perFunction: false
     perType: false
     perGroupFunction: true
+

@@ -329,7 +329,7 @@ Resources:
         Memory: 3900
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
-        Image: sorgerlab/bfextractor:0.0.5
+        Image: sorgerlab/bfextractor:0.0.6
       RetryStrategy:
         Attempts: 2
 

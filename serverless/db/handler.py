@@ -232,10 +232,13 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
                 self.user_uuid = _event_user(event)
                 return make_response(code, fn(self, event, context))
             except KeyError as e:
+                logger.exception('Client error')
                 return make_response(400, {'error': str(e)})
             except ValueError as e:
+                logger.exception('Client error')
                 return make_response(422, {'error': str(e)})
             except AuthError as e:
+                logger.exception('Client error')
                 return make_response(403, {'error': str(e)})
             except Exception as e:
                 logger.exception('Unexpected server error')
@@ -277,7 +280,8 @@ def _event_query_param(event, key, multi=False):
 
 
 def _event_path_param(event, key):
-    return event['pathParameters'][key]
+    from urllib import parse
+    return parse.unquote(event['pathParameters'][key])
 
 
 _valid_name = re.compile('^[a-zA-Z][a-zA-Z0-9\\-_]+$')
@@ -307,6 +311,11 @@ def _validate_uuid(u):
 def _validate_permission(p):
     if p not in ['Read', 'Write', 'Admin']:
         raise ValueError('Permission {} is invalid'.format(p))
+
+
+def _validate_resource_type(resource_type: str):
+    if resource_type.lower() not in ['repository', 'image']:
+        raise ValueError('Invalid resource type {}'.format(resource_type))
 
 
 class Handler:
@@ -389,31 +398,6 @@ class Handler:
         '''
         if not self.client.is_member(group, user, membership_type):
             raise AuthError('Permission Denied')
-
-    # def handle(self, event, context) -> str:
-    #     '''Based on route, trigger the relevant method.
-    #
-    #     Args:
-    #         event: API Gateway event.
-    #         context: API Gateway context.
-    #
-    #     Returns:
-    #         API Gateway compatable JSON string response.
-    #     '''
-    #
-    #     # Create a session to handle this request
-    #     self.session = DBSession()
-    #     self.client = Client(self.session)
-    #
-    #     # # TODO Handle route
-    #     # path = _event_path(event)
-    #     # fn = getattr(self, path)
-    #     # return fn(event, context)
-    #     # if path = '/cognito_details':
-    #     #     return self.cognito_details(event, context)
-    #
-    #
-    #     # return self.create_group(event, context)
 
     @response(200)
     def cognito_details(self, event, context):
@@ -869,6 +853,58 @@ class Handler:
     def list_repositories_for_user(self, event, context):
         user = _event_user(event)
         return self.client.list_repositories_for_user(user)
+
+    @response(200)
+    def list_grants_for_repository(self, event, context):
+        repository_uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(repository_uuid)
+        return self.client.list_grants_for_repository(repository_uuid)
+
+    @response(200)
+    def find_user(self, event, context):
+        search = _event_path_param(event, 'search')
+        logger.info(search)
+        return self.client.find_user(search)
+
+    @response(200)
+    def find_group(self, event, context):
+        search = _event_path_param(event, 'search')
+        return self.client.find_group(search)
+
+    # Rename method because this works for groups as well
+    @response(204)
+    def grant_resource_to_user(self, event, context):
+        resource_uuid = self.body.get('uuid')
+        resource_type = self.body.get('resource')
+        _validate_resource_type(resource_type)
+        _validate_uuid(resource_uuid)
+        grantee = self.body.get('grantee')
+        _validate_uuid(grantee)
+
+        if grantee == self.user_uuid:
+            raise ValueError("Can not change permissions for self")
+
+        permissions = self.body.get('permissions')
+        if isinstance(permissions, str):
+            permissions = [permissions]
+
+        for permission in permissions:
+            _validate_permission(permission)
+
+        for permission in permissions:
+            if resource_type.lower() == 'repository':
+                self._has_permission(self.user_uuid, 'Repository', resource_uuid, 'Admin')
+                self.client.grant_repository_to_subject(resource_uuid, grantee, permission)
+            else:
+                raise ValueError("Grant not implemented yet for resource ", resource_type)
+
+    @response(204)
+    def delete_grant(self, event, context):
+        resource_uuid = _event_path_param(event, 'uuid')
+        subject_uuid = _event_path_param(event, 'subject_uuid')
+        self._has_permission(self.user_uuid, 'Repository', resource_uuid, 'Admin')
+        self.client.delete_grant(subject_uuid=subject_uuid, resource_uuid=resource_uuid)
+
     #
     # @response(200)
     # def list_users_in_group(self, event, context):
@@ -917,17 +953,7 @@ class Handler:
     #         }
     #     }
     #
-    # @response(201)
-    # def grant_repository_to_user(self, event, context):
-    #     user = _event_user(event)
-    #     repository = _event_path_param(event, 'uuid')
-    #     grantee = _event_path_param(event, 'grantee')
-    #     permissions = _event_query_param(event, 'permissions', True)
-    #     for permission in permissions:
-    #         _validate_permission(permission)
-    #     _user_permission(user, repository, 'Admin')
-    #     client.add_user_to_repository(repository, grantee, permissions)
-    #     return {}
+
 
 
 handler = Handler()
@@ -964,3 +990,8 @@ delete_repository = handler.delete_repository
 delete_membership = handler.delete_membership
 delete_image = handler.delete_image
 restore_image = handler.restore_image
+list_grants_for_repository = handler.list_grants_for_repository
+find_user = handler.find_user
+find_group = handler.find_group
+grant_resource_to_user = handler.grant_resource_to_user
+delete_grant = handler.delete_grant
