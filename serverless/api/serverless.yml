@@ -73,6 +73,18 @@ functions:
     events:
       - http:
           method: GET
+          caching:
+            enabled: true
+            cacheKeyParameters:
+              - name: request.path.uuid
+              - name: request.path.x
+              - name: request.path.y
+              - name: request.path.z
+              - name: request.path.t
+              - name: request.path.level
+              - name: request.path.channel_group
+
+
           cors: true
           path: /image/{uuid}/prerendered-tile/{x}/{y}/{z}/{t}/{level}/{channel_group}
           contentHandling: CONVERT_TO_BINARY
@@ -100,12 +112,23 @@ plugins:
   - serverless-python-requirements
   - serverless-pseudo-parameters
   - serverless-apigwy-binary
+  - serverless-api-gateway-caching
 
 custom:
   apigwBinary:
     types:
       - "image/png"
       - "image/jpeg"
+      -
+  apiGatewayCaching:
+    enabled: true
+    clusterSize: '6.1' # defaults to '0.5'
+    ttlInSeconds: 300 # defaults to the maximum allowed: 3600
+    dataEncrypted: false # defaults to false
+    perKeyInvalidation:
+      requireAuthorization: true # default is true
+      handleUnauthorizedRequests: Ignore # default is "IgnoreWithWarning"
+
   pythonRequirements:
     useDownloadCache: false
     useStaticCache: false

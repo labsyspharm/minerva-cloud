@@ -326,7 +326,7 @@ Resources:
           - Ref::reader_version
           - Ref::bucket
           - Ref::fileset_uuid
-        Memory: 3900
+        Memory: 7870
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
         Image: sorgerlab/bfextractor:0.0.6

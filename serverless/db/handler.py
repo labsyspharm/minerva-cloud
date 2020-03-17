@@ -262,7 +262,8 @@ def _event_body(event):
     if 'body' in event and event['body'] is not None:
         try:
             return json.loads(event['body'])
-        except Exception:
+        except Exception as e:
+            logger.warning("Invalid JSON: %s", event['body'])
             return event['body']
     return {}
 

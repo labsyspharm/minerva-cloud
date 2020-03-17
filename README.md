@@ -62,6 +62,8 @@ DatabasePassword: password
 
 ## Instructions
 
+You can later update the stacks by replacing word "create" with "update"
+
 1. Deploy the common cloudformation infrastructure
 
 ```bash

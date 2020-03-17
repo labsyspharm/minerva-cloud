@@ -3,8 +3,6 @@ import os
 import base64
 import json
 import logging
-import time
-import statistics
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
 logging.getLogger().setLevel(logging.INFO)
@@ -12,8 +10,13 @@ logging.getLogger().setLevel(logging.INFO)
 os.environ['STACK_PREFIX'] = 'minerva-juha'
 os.environ['STAGE'] = 'dev'
 
+logging.info("Start api_handler imports")
 from api.handler import handler as api_handler
+logging.info("End api_handler imports")
+logging.info("Start db_handler imports")
 from db.handler import handler as db_handler
+logging.info("End db_handler imports")
+
 from lambda_helpers import EventBuilder
 
 
@@ -145,6 +148,33 @@ def list_images_in_repository(repository_uuid):
     res = db_handler.list_images_in_repository(event, None)
     print(res)
 
+def list_grants_for_repository(repository_uuid):
+    parameters = {
+        "uuid": repository_uuid
+    }
+    event = EventBuilder().path_parameters(parameters).build()
+    res = db_handler.list_grants_for_repository(event, None)
+    print(res)
+
+def find_user(search):
+    parameters = {
+        "search": search
+    }
+    event = EventBuilder().path_parameters(parameters).build()
+    res = db_handler.find_user(event, None)
+    print(res)
+
+def grant_repository_to_user(repository_uuid, user_uuid):
+    body = {
+        "uuid": repository_uuid,
+        "resource": "repository",
+        "grantee": user_uuid,
+        "permissions": "Read"
+    }
+    event = EventBuilder().body(body).build()
+    res = db_handler.grant_resource_to_user(event, None)
+    print(res)
+
 def create_metadata(image_uuid):
     xml = """<OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06" 
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" UUID="urn:uuid:7e6a38a4-d28c-4efe-b519-48d1314bad67" xsi:schemaLocation="http://www.openmicroscopy.org/Schemas/OME/2016-06 http://www.openmicroscopy.org/Schemas/OME/2016-06/ome.xsd">
@@ -269,7 +299,7 @@ def create_metadata(image_uuid):
     res = db_handler.create_metadata(event, None)
     print(res)
 
-list_images_in_repository("48001701-d606-4fc8-b3fd-51dcf64296ef")
+#list_images_in_repository("48001701-d606-4fc8-b3fd-51dcf64296ef")
 #create_image("Testi", 3, "48001701-d606-4fc8-b3fd-51dcf64296ef")
 #get_image("4b7274d1-44de-4bda-989d-9ed48d24c1ac")
 
@@ -288,3 +318,8 @@ list_images_in_repository("48001701-d606-4fc8-b3fd-51dcf64296ef")
 
 #create_rendering_settings()
 #list_rendering_settings()
+
+#list_grants_for_repository("d3c20894-5831-4273-b2f5-1be266a1a8cb")
+grant_repository_to_user("d3c20894-5831-4273-b2f5-1be266a1a8cb", "de09a291-1c75-442d-b8f8-e257dd455232")
+#find_user("juha")
+
