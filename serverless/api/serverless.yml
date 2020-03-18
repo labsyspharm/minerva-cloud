@@ -89,9 +89,11 @@ functions:
           path: /image/{uuid}/prerendered-tile/{x}/{y}/{z}/{t}/{level}/{channel_group}
           contentHandling: CONVERT_TO_BINARY
           authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId:
-              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+            arn: 'Fn::ImportValue': ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
+          #authorizer:
+          #  type: COGNITO_USER_POOLS
+          #  authorizerId:
+          #    Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
 
   renderRegion:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-renderRegion

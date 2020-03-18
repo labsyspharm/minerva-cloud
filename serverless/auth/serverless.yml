@@ -1,0 +1,59 @@
+service: ${file(${opt:configfile}):StackPrefix}-${file(${opt:configfile}):Stage}-serverless-api
+
+package:
+  exclude:
+    - node_modules/**
+
+provider:
+  name: aws
+  tags:
+    project: ${file(${opt:configfile}):ProjectTag}
+  region: ${file(${opt:configfile}):Region}
+  stage: ${file(${opt:configfile}):Stage}
+  runtime: python3.6
+  memorySize: 512
+  vpc:
+    securityGroupIds:
+      - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
+      # Default SG for SSM
+      - ${file(${opt:configfile}):DefaultSecurityGroup}
+    # Private subnets with internet routing
+    subnetIds: ${file(${opt:configfile}):SubnetsPrivate}
+  deploymentBucket:
+    name: ${file(${opt:configfile}):DeploymentBucket}
+  environment:
+    STACK_PREFIX: ${file(${opt:configfile}):StackPrefix}
+    STAGE: ${file(${opt:configfile}):Stage}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - ssm:GetParameter
+        - ssm:GetParameters
+      Resource: "arn:aws:ssm:#{AWS::Region}:#{AWS::AccountId}:parameter/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/*"
+
+functions:
+  authorize:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorize
+    handler: lambda_handler
+
+resources:
+  Outputs:
+    Value:
+      Ref: authorize
+    Export:
+      Name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    useDownloadCache: false
+    useStaticCache: false
+    dockerizePip: non-linux
+    dockerFile: Dockerfile
+    slim: true
+    strip: false
+    slimPatterns:
+      - "**/cv2/data/haarcascade*.xml"
+      - "**/tests/*"
