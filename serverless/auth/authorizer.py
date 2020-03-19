@@ -1,21 +1,25 @@
 import re
+import boto3
+from .token_decoder import decode
 
 
 class Handler:
-    def authorize_request(self, event, context):
+
+    def lambda_handler(event, context):
         print("Client token: " + event['authorizationToken'])
         print("Method ARN: " + event['methodArn'])
-        """validate the incoming token"""
-        """and produce the principal user identifier associated with the token"""
+        anonymous = False
+        token = event['authorizationToken']
+        if token is None or len(token) == 0:
+            anonymous = True
+        else:
+            """validate the incoming token"""
+            """and produce the principal user identifier associated with the token"""
+            res = decode(token)
+            if res is False:
+                raise Exception('Unauthorized')
 
-        """this could be accomplished in a number of ways:"""
-        """1. Call out to OAuth provider"""
-        """2. Decode a JWT token inline"""
-        """3. Lookup in a self-managed DB"""
-        principalId = "user|a1b2c3d4"
-
-        """you can send a 401 Unauthorized response to the client by failing like so:"""
-        """raise Exception('Unauthorized')"""
+            principalId = res['sub']
 
         """if the token is valid, a policy must be generated which will allow or deny access to the client"""
 
@@ -38,8 +42,15 @@ class Handler:
         policy.restApiId = apiGatewayArnTmp[0]
         policy.region = tmp[3]
         policy.stage = apiGatewayArnTmp[1]
-        policy.denyAllMethods()
-        """policy.allowMethod(HttpVerb.GET, "/pets/*")"""
+
+        if anonymous:
+            policy.denyAllMethods()
+            policy.allowMethod(HttpVerb.GET, "/image/*")
+            policy.allowMethod(HttpVerb.GET, "/repository/*/images")
+            granted_repositories = "880ab7e4-6949-11ea-bc55-0242ac130003,read"
+        else:
+            policy.allowAllMethods()
+            granted_repositories = ""
 
         # Finally, build the policy
         authResponse = policy.build()
@@ -48,16 +59,14 @@ class Handler:
         # these are made available by APIGW like so: $context.authorizer.<key>
         # additional context is cached
         context = {
-            'key': 'value',  # $context.authorizer.key -> value
-            'number': 1,
-            'bool': True
+            'granted_repositories': granted_repositories,  # $context.authorizer.key -> value
+            'anonymous': anonymous
         }
         # context['arr'] = ['foo'] <- this is invalid, APIGW will not accept it
         # context['obj'] = {'foo':'bar'} <- also invalid
-
         authResponse['context'] = context
-
         return authResponse
+
 
     def test_authorization(self, event, context):
         print("Test authorization - auth success")
@@ -222,6 +231,7 @@ class AuthPolicy(object):
         policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Deny", self.denyMethods))
 
         return policy
+
 
 handler = Handler()
 authorize_request = handler.authorize_request
