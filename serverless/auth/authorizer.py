@@ -1,62 +1,68 @@
 import re
 
 
-def lambda_handler(event, context):
-    print("Client token: " + event['authorizationToken'])
-    print("Method ARN: " + event['methodArn'])
-    """validate the incoming token"""
-    """and produce the principal user identifier associated with the token"""
+class Handler:
+    def authorize_request(self, event, context):
+        print("Client token: " + event['authorizationToken'])
+        print("Method ARN: " + event['methodArn'])
+        """validate the incoming token"""
+        """and produce the principal user identifier associated with the token"""
 
-    """this could be accomplished in a number of ways:"""
-    """1. Call out to OAuth provider"""
-    """2. Decode a JWT token inline"""
-    """3. Lookup in a self-managed DB"""
-    principalId = "user|a1b2c3d4"
+        """this could be accomplished in a number of ways:"""
+        """1. Call out to OAuth provider"""
+        """2. Decode a JWT token inline"""
+        """3. Lookup in a self-managed DB"""
+        principalId = "user|a1b2c3d4"
 
-    """you can send a 401 Unauthorized response to the client by failing like so:"""
-    """raise Exception('Unauthorized')"""
+        """you can send a 401 Unauthorized response to the client by failing like so:"""
+        """raise Exception('Unauthorized')"""
 
-    """if the token is valid, a policy must be generated which will allow or deny access to the client"""
+        """if the token is valid, a policy must be generated which will allow or deny access to the client"""
 
-    """if access is denied, the client will recieve a 403 Access Denied response"""
-    """if access is allowed, API Gateway will proceed with the backend integration configured on the method that was called"""
+        """if access is denied, the client will recieve a 403 Access Denied response"""
+        """if access is allowed, API Gateway will proceed with the backend integration configured on the method that was called"""
 
-    """this function must generate a policy that is associated with the recognized principal user identifier."""
-    """depending on your use case, you might store policies in a DB, or generate them on the fly"""
+        """this function must generate a policy that is associated with the recognized principal user identifier."""
+        """depending on your use case, you might store policies in a DB, or generate them on the fly"""
 
-    """keep in mind, the policy is cached for 5 minutes by default (TTL is configurable in the authorizer)"""
-    """and will apply to subsequent calls to any method/resource in the RestApi"""
-    """made with the same token"""
+        """keep in mind, the policy is cached for 5 minutes by default (TTL is configurable in the authorizer)"""
+        """and will apply to subsequent calls to any method/resource in the RestApi"""
+        """made with the same token"""
 
-    """the example policy below denies access to all resources in the RestApi"""
-    tmp = event['methodArn'].split(':')
-    apiGatewayArnTmp = tmp[5].split('/')
-    awsAccountId = tmp[4]
+        """the example policy below denies access to all resources in the RestApi"""
+        tmp = event['methodArn'].split(':')
+        apiGatewayArnTmp = tmp[5].split('/')
+        awsAccountId = tmp[4]
 
-    policy = AuthPolicy(principalId, awsAccountId)
-    policy.restApiId = apiGatewayArnTmp[0]
-    policy.region = tmp[3]
-    policy.stage = apiGatewayArnTmp[1]
-    policy.denyAllMethods()
-    """policy.allowMethod(HttpVerb.GET, "/pets/*")"""
+        policy = AuthPolicy(principalId, awsAccountId)
+        policy.restApiId = apiGatewayArnTmp[0]
+        policy.region = tmp[3]
+        policy.stage = apiGatewayArnTmp[1]
+        policy.denyAllMethods()
+        """policy.allowMethod(HttpVerb.GET, "/pets/*")"""
 
-    # Finally, build the policy
-    authResponse = policy.build()
+        # Finally, build the policy
+        authResponse = policy.build()
 
-    # new! -- add additional key-value pairs associated with the authenticated principal
-    # these are made available by APIGW like so: $context.authorizer.<key>
-    # additional context is cached
-    context = {
-        'key': 'value',  # $context.authorizer.key -> value
-        'number': 1,
-        'bool': True
-    }
-    # context['arr'] = ['foo'] <- this is invalid, APIGW will not accept it
-    # context['obj'] = {'foo':'bar'} <- also invalid
+        # new! -- add additional key-value pairs associated with the authenticated principal
+        # these are made available by APIGW like so: $context.authorizer.<key>
+        # additional context is cached
+        context = {
+            'key': 'value',  # $context.authorizer.key -> value
+            'number': 1,
+            'bool': True
+        }
+        # context['arr'] = ['foo'] <- this is invalid, APIGW will not accept it
+        # context['obj'] = {'foo':'bar'} <- also invalid
 
-    authResponse['context'] = context
+        authResponse['context'] = context
 
-    return authResponse
+        return authResponse
+
+    def test_authorization(self, event, context):
+        print("Test authorization - auth success")
+        print(event)
+        print(context)
 
 
 class HttpVerb:
@@ -216,3 +222,7 @@ class AuthPolicy(object):
         policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Deny", self.denyMethods))
 
         return policy
+
+handler = Handler()
+authorize_request = handler.authorize_request
+test_authorization = handler.test_authorization
