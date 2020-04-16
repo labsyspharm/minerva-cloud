@@ -1,2 +1,2 @@
 boto3==1.7.81
-git+https://github.com/sorgerlab/minerva-db@0.0.1#egg=mineva-db
+git+https://github.com/sorgerlab/minerva-db@master#egg=mineva-db

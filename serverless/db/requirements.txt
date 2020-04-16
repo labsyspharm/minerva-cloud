@@ -1,5 +1,5 @@
 boto3==1.7.81
 # To speed up local development, uncomment next line to use local version of minerva-db
 #-e ../../../minerva-db
-git+https://github.com/labsyspharm/minerva-db@juha_dev#egg=minerva-db
+git+https://github.com/labsyspharm/minerva-db@master#egg=minerva-db
 
