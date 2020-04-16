@@ -122,7 +122,7 @@ Resources:
       AllocatedStorage: 20
       DBInstanceClass: db.t2.micro
       Engine: postgres
-      EngineVersion: 10.3
+      EngineVersion: 10.9
       MasterUsername: minerva
       MasterUserPassword: !Ref DatabasePassword
       DBSubnetGroupName: !Ref DBSubnetGroup

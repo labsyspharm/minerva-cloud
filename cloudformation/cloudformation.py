@@ -6,6 +6,7 @@ import os
 import sys
 from ruamel.yaml import YAML
 import boto3
+import time
 
 
 def load_config(config):
@@ -154,6 +155,28 @@ def main(operation, stack, config):
     if 'StackId' in response:
         stack_id = response['StackId']
         print(f'Stack {stack} {operation} completed: {stack_id}')
+        poll_progress = True
+    else:
+        poll_progress = False
+
+    status = ""
+    print('Waiting for stack update to complete')
+    while poll_progress:
+        sys.stdout.write('-')
+        time.sleep(2)
+        response = cf.describe_stacks(StackName=stack_id)
+
+        for stack in response['Stacks']:
+            if stack['StackId'] == stack_id:
+                if stack['StackStatus'] != status:
+                    status = stack['StackStatus']
+                    sys.stdout.write('>' + status)
+                    poll_progress = 'IN_PROGRESS' in status
+
+        sys.stdout.flush()
+
+    print("")
+    print("Stack status: ", status)
 
 
 

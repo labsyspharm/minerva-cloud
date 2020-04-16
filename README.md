@@ -92,27 +92,34 @@ cd cloudformation
 python cloudformation.py create batch ../../minerva-configs/test/config.yml
 ```
 
-5. Deploy the db serverless infrastructure
+5. Deploy the auth serverless infrastructure
+
+```bash
+cd serverless/auth
+serverless deploy --configfile ../../../minerva-configs/test/config.yml
+```
+
+6. Deploy the db serverless infrastructure
 
 ```bash
 cd serverless/db
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
-6. Deploy the batch serverless infrastructure
+7. Deploy the batch serverless infrastructure
 
 ```bash
 cd serverless/batch
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
-7. Deploy the api serverless infrastructure
+8. Deploy the api serverless infrastructure
 
 ```bash
 cd serverless/api
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
-8. Run AWS lambda `initdb` method to initialise the database
+9. Run AWS lambda `initdb` method to initialise the database
 
-9. Create some users using the AWS Cognito console
+10. Create some users using the AWS Cognito console
