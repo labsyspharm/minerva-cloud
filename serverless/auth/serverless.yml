@@ -11,7 +11,7 @@ provider:
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
   runtime: python3.6
-  memorySize: 512
+  memorySize: 256
   vpc:
     securityGroupIds:
       - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
@@ -34,24 +34,26 @@ provider:
 functions:
   authorize:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorize
-    handler: lambda_handler
+    handler: authorizer.authorize_request
 
 resources:
   Outputs:
-    Value:
-      Ref: authorize
-    Export:
-      Name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
+    CustomAuthorizerQualifiedArn:
+      Value:
+        Fn::GetAtt:
+          - AuthorizeLambdaFunction
+          - Arn
+      Export:
+        Name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
 
 plugins:
   - serverless-python-requirements
+  - serverless-pseudo-parameters
 
 custom:
   pythonRequirements:
     useDownloadCache: false
     useStaticCache: false
-    dockerizePip: non-linux
-    dockerFile: Dockerfile
     slim: true
     strip: false
     slimPatterns:

@@ -1,25 +1,120 @@
+"""
+Custom lambda authorizer for API Gateway
+
+Reads Cognito IdToken from authorization-header, and decodes and validates it.
+The decoded token contains principalId (uuid) of the user, which is forwarded to lambda handlers.
+
+Public (guest) usage of API:
+Unauthenticated consumers of the API should send "Anonymous" in the authorization header.
+This will be resolved into principalId: 00000000-0000-0000-0000-000000000000
+Unauthenticated users are allowed to access only a selected set of endpoints.
+
+The code is heavily based on the Amazon Custom Authorizer Blueprints for AWS Lambda
+https://github.com/awslabs/aws-apigateway-lambda-authorizer-blueprints
+
+"""
 import re
+import os
 import boto3
-from .token_decoder import decode
+import json
+import time
+import urllib.request
+from jose import jwk, jwt
+from jose.utils import base64url_decode
+
+REGION = os.environ['AWS_REGION']
+STACK_PREFIX = os.environ['STACK_PREFIX']
+STAGE = os.environ['STAGE']
+
+ssm = boto3.client('ssm')
+parameters_response = ssm.get_parameters(
+    Names=[
+        '/{}/{}/common/CognitoUserPoolARN'.format(STACK_PREFIX, STAGE)
+    ]
+)
+
+def get_value(name):
+    for p in parameters_response['Parameters']:
+        if p['Name'].endswith(name):
+            return p['Value']
+    raise ValueError('Value not found for Parameter ' + name)
+
+
+userpool_arn = get_value('CognitoUserPoolARN')
+userpool_id = userpool_arn.split('/')[-1]
+#app_client_id = '<ENTER APP CLIENT ID HERE>'
+keys_url = 'https://cognito-idp.{}.amazonaws.com/{}/.well-known/jwks.json'.format(REGION, userpool_id)
+# instead of re-downloading the public keys every time
+# we download them only on cold start
+# https://aws.amazon.com/blogs/compute/container-reuse-in-lambda/
+with urllib.request.urlopen(keys_url) as f:
+    response = f.read()
+keys = json.loads(response.decode('utf-8'))['keys']
+print(keys)
+
+def decode(token):
+    bearer_prefix = "Bearer "
+    if bearer_prefix in token:
+        token = token[len(bearer_prefix):]
+    # get the kid from the headers prior to verification
+    headers = jwt.get_unverified_headers(token)
+    kid = headers['kid']
+    # search for the kid in the downloaded public keys
+    key_index = -1
+    for i in range(len(keys)):
+        if kid == keys[i]['kid']:
+            key_index = i
+            break
+    if key_index == -1:
+        raise ValueError('Public key not found in jwks.json')
+    # construct the public key
+    public_key = jwk.construct(keys[key_index])
+    # get the last two sections of the token,
+    # message and signature (encoded in base64)
+    message, encoded_signature = str(token).rsplit('.', 1)
+    # decode the signature
+    decoded_signature = base64url_decode(encoded_signature.encode('utf-8'))
+    # verify the signature
+    if not public_key.verify(message.encode("utf8"), decoded_signature):
+        raise ValueError('Signature verification failed')
+    print('Signature successfully verified')
+    # since we passed the verification, we can now safely
+    # use the unverified claims
+    claims = jwt.get_unverified_claims(token)
+    # additionally we can verify the token expiration
+    if time.time() > claims['exp']:
+        raise ValueError('Token is expired')
+    # and the Audience  (use claims['client_id'] if verifying an access token)
+    #if claims['aud'] != app_client_id:
+    #    print('Token was not issued for this audience')
+    #    return False
+    # now we can use the claims
+    print(claims)
+    return claims
 
 
 class Handler:
 
-    def lambda_handler(event, context):
-        print("Client token: " + event['authorizationToken'])
-        print("Method ARN: " + event['methodArn'])
+    def authorize_request(self, event, context):
         anonymous = False
-        token = event['authorizationToken']
-        if token is None or len(token) == 0:
+        token = None
+        if "authorizationToken" in event:
+            token = event['authorizationToken']
+
+        if token == 'Anonymous' or token == 'Bearer Anonymous':
             anonymous = True
+            principal_id = '00000000-0000-0000-0000-000000000000'
         else:
             """validate the incoming token"""
             """and produce the principal user identifier associated with the token"""
-            res = decode(token)
-            if res is False:
-                raise Exception('Unauthorized')
+            try:
+                res = decode(token)
+                if res is False:
+                    raise Exception('Unauthorized')
 
-            principalId = res['sub']
+                principal_id = res['sub']
+            except Exception as e:
+                raise ValueError('Unauthorized - Invalid token')
 
         """if the token is valid, a policy must be generated which will allow or deny access to the client"""
 
@@ -33,45 +128,49 @@ class Handler:
         """and will apply to subsequent calls to any method/resource in the RestApi"""
         """made with the same token"""
 
-        """the example policy below denies access to all resources in the RestApi"""
         tmp = event['methodArn'].split(':')
         apiGatewayArnTmp = tmp[5].split('/')
         awsAccountId = tmp[4]
 
-        policy = AuthPolicy(principalId, awsAccountId)
+        policy = AuthPolicy(principal_id, awsAccountId)
         policy.restApiId = apiGatewayArnTmp[0]
         policy.region = tmp[3]
         policy.stage = apiGatewayArnTmp[1]
 
         if anonymous:
-            policy.denyAllMethods()
             policy.allowMethod(HttpVerb.GET, "/image/*")
-            policy.allowMethod(HttpVerb.GET, "/repository/*/images")
-            granted_repositories = "880ab7e4-6949-11ea-bc55-0242ac130003,read"
+            policy.allowMethod(HttpVerb.GET, "/repository")
+            policy.allowMethod(HttpVerb.GET, "/repository/*")
+            policy.allowMethod(HttpVerb.GET, "/image/*/dimensions")
+            policy.allowMethod(HttpVerb.GET, "/authtest")
         else:
             policy.allowAllMethods()
-            granted_repositories = ""
 
         # Finally, build the policy
-        authResponse = policy.build()
+        response = policy.build()
 
         # new! -- add additional key-value pairs associated with the authenticated principal
         # these are made available by APIGW like so: $context.authorizer.<key>
         # additional context is cached
         context = {
-            'granted_repositories': granted_repositories,  # $context.authorizer.key -> value
+            # APIGW will not accept arrays or maps, have to use a string
             'anonymous': anonymous
         }
-        # context['arr'] = ['foo'] <- this is invalid, APIGW will not accept it
-        # context['obj'] = {'foo':'bar'} <- also invalid
-        authResponse['context'] = context
-        return authResponse
-
+        response['context'] = context
+        return response
 
     def test_authorization(self, event, context):
         print("Test authorization - auth success")
         print(event)
-        print(context)
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true'
+            },
+            'body': json.dumps(event)
+        }
 
 
 class HttpVerb:
