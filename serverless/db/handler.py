@@ -269,7 +269,11 @@ def _event_body(event):
 
 
 def _event_user(event):
-    uuid = event['requestContext']['authorizer']['claims']['cognito:username']
+    print(event)
+    if 'claims' in event['requestContext']['authorizer']:
+        uuid = event['requestContext']['authorizer']['claims']['cognito:username']
+    else:
+        uuid = event['requestContext']['authorizer']['principalId']
     _validate_uuid(uuid)
     return uuid
 
@@ -786,7 +790,18 @@ class Handler:
         if name is not None:
             _validate_name(name)
         self._has_permission(self.user_uuid, 'Repository', uuid, 'Admin')
-        return self.client.update_repository(uuid, name, raw_storage)
+
+        access = None
+        if 'access' in self.body:
+            access = self.body.get('access')
+            public_read_group = self.client.find_group('MinervaPublicRead')['data'][0]
+            print(public_read_group)
+            if access == 'PublicRead':
+                self.client.grant_repository_to_subject(uuid, public_read_group["uuid"], "Read")
+            elif access == 'Private':
+                self.client.delete_grant(public_read_group["uuid"], uuid)
+
+        return self.client.update_repository(uuid, name, raw_storage, access)
 
     @response(200)
     def update_membership(self, event, context):

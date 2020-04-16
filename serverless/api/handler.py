@@ -1,4 +1,6 @@
 import logging
+import sys
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -207,7 +209,11 @@ def _event_body(event):
 
 
 def _event_user(event):
-    uuid = event['requestContext']['authorizer']['claims']['cognito:username']
+    print(event)
+    if 'claims' in event['requestContext']['authorizer']:
+        uuid = event['requestContext']['authorizer']['claims']['cognito:username']
+    else:
+        uuid = event['requestContext']['authorizer']['principalId']
     _validate_uuid(uuid)
     return uuid
 
@@ -217,6 +223,8 @@ def _event_path_param(event, key):
 
 
 def _event_query_param(event, key, multi=False):
+    if key not in event['queryStringParameters']:
+        return None
     value = event['queryStringParameters'][key]
     if multi is True:
         return value.split(',')
@@ -291,34 +299,47 @@ def handle_missing_tile(client, uuid, x, y, z, t, c, level, key):
         raise Exception(f'Internal Server Error: Requested tile ({key}) not'
                         'found, but should exist')
 
-def _s3_get(client, bucket, uuid, x, y, z, t, c, level):
-    '''Fetch a specific PNG from S3 and decode'''
 
-    start = time.time()
-    # Use the indices to build the key
-    key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}.png'
+class S3TileProvider:
+    def __init__(self, client, tile_bucket, missing_tile_callback=None):
+        self.client = client
+        self.bucket = tile_bucket
+        self.missing_tile_callback = missing_tile_callback
 
-    try:
-        logger.info("Fetching tile %s/%s", bucket, key)
-        obj = boto3.resource('s3').Object(bucket, key)
-        body = obj.get()['Body']
-        data = body.read()
-        t = round((time.time() - start) * 1000)
+    def get_tile(self, uuid, x, y, z, t, c, level):
+        '''Fetch a specific PNG from S3 and decode'''
 
-        stream = BytesIO(data)
-        image = imageio.imread(stream, format="png")
-        logger.info("%s - Fetch COMPLETE %s ms", key, str(t))
-        return image
+        start = time.time()
+        # Use the indices to build the key
+        key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}.png'
 
-    except ClientError as e:
-        logger.error(e)
-        if e.response['Error']['Code'] == 'NoSuchKey':
-            handle_missing_tile(client, uuid, x, y, z, t, c, level, key)
-        else:
+        try:
+            logger.info("Fetching tile %s/%s", self.bucket, key)
+            data = self._s3_get_object(key)
+            t = round((time.time() - start) * 1000)
+
+            stream = BytesIO(data)
+            image = imageio.imread(stream, format="png")
+            logger.info("%s - Fetch COMPLETE %s ms", key, str(t))
+            return image
+
+        except ClientError as e:
+            logger.error(e)
+            logger.info("%s - Fetch COMPLETE %s ms", key, str(t))
+            sys.stdout.flush()
+            if e.response['Error']['Code'] == 'NoSuchKey' and self.missing_tile_callback is not None:
+                self.missing_tile_callback(self.client, uuid, x, y, z, t, c, level, key)
+            else:
+                raise e
+        except Exception as e:
+            logger.error(e)
             raise e
-    except Exception as e:
-        logger.error(e)
-        raise e
+
+    @lru_cache(maxsize=512)
+    def _s3_get_object(self, key):
+        obj = boto3.resource('s3').Object(self.bucket, key)
+        body = obj.get()['Body']
+        return body.read()
 
 def _hex_to_bgr(color):
     '''Convert hex color to BGR'''
@@ -385,9 +406,10 @@ class Handler:
                                           permission):
             raise AuthError('Permission Denied')
 
+
     @response(200)
     def render_tile(self, event, context):
-        '''Render the specified tile with the given settings'''
+        '''Render the specified tile with arbitrary channels and color settings'''
 
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
@@ -398,6 +420,7 @@ class Handler:
         z = int(_event_path_param(event, 'z'))
         t = int(_event_path_param(event, 't'))
         level = int(_event_path_param(event, 'level'))
+        gamma = float(_event_query_param(event, 'gamma'))
 
         # Split the channels path parameters
         channel_path_params = event['pathParameters']['channels'].split('/')
@@ -406,10 +429,13 @@ class Handler:
         channels = [_parse_channel_params(param)
                     for param in channel_path_params]
 
-        return self._render_tile(uuid, x, y, z, t, level, channels)
+        return self._render_tile(uuid, x, y, z, t, level, channels, gamma=gamma)
 
     @response(200)
     def prerendered_tile(self, event, context):
+        '''Render the specified tile with previously saved rendering settings'''
+
+        print(event)
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
         self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
@@ -423,19 +449,14 @@ class Handler:
 
         logger.info("Render tile L=%s X=%s Y=%s CG_uuid=%s START", level, x, y, channel_group_uuid)
 
-        return self._prerendered_tile_cached(uuid, x, y, z, t, level, channel_group_uuid)
-
-    @lru_cache(maxsize=512)
-    def _prerendered_tile_cached(self, uuid, x, y, z, t, level, channel_group_uuid):
         rendering_settings = self.client.get_image_channel_group(channel_group_uuid)
         channels = _channels_json_to_params(rendering_settings.channels)
+        return self._render_tile(uuid, x, y, z, t, level, channels, gamma=1)
 
-        return self._render_tile(uuid, x, y, z, t, level, channels)
-
-    def _render_tile(self, uuid, x, y, z, t, level, channels):
+    def _render_tile(self, uuid, x, y, z, t, level, channels, gamma=None):
         total_start = time.time()
         # Prepare for blending
-        args = [(self.client, bucket.split(':')[-1], uuid, x, y, z, t,
+        args = [(uuid, x, y, z, t,
                  channel['index'], level) for channel in channels]
 
         # TODO Blend images as they are received instead of waiting for all.
@@ -448,9 +469,10 @@ class Handler:
         # Fetch raw tiles in parallel
         logger.info("Start fetching images for channel tiles from S3")
         start = time.time()
+        s3_tile_provider = S3TileProvider(self.client, bucket.split(':')[-1], missing_tile_callback=handle_missing_tile)
         try:
             pool = ThreadPool(len(channels))
-            images = pool.starmap(_s3_get, args)
+            images = pool.starmap(s3_tile_provider.get_tile, args)
         finally:
             pool.close()
 
@@ -462,7 +484,7 @@ class Handler:
 
         # Blend the raw tiles
         composite_start = time.time()
-        composite = render.composite_channels(channels)
+        composite = render.composite_channels(channels, gamma=gamma)
         composite_time = round((time.time() - composite_start) * 1000)
         logger.info("composite_channels time: %s ms", composite_time)
 
@@ -471,10 +493,7 @@ class Handler:
         composite = composite.astype(np.uint8, copy=False)
 
         # Encode rendered image as JPG
-        #encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-        #img = cv2.imencode('.jpg', composite, encode_param)[1]
-        img = simplejpeg.encode_jpeg(composite, quality=90, colorspace="BGR")
-        print(len(img))
+        img = simplejpeg.encode_jpeg(composite, quality=80, colorspace="BGR")
         total_time = round((time.time() - total_start) * 1000)
         logger.info("Render tile L=%s X=%s Y=%s DONE, total time: %s ms", level, x, y, total_time)
         return img

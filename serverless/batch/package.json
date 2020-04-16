@@ -1,5 +1,6 @@
 {
   "devDependencies": {
+    "serverless": "^1.66.0",
     "serverless-python-requirements": "^5.0.1",
     "serverless-step-functions": "dpwrussell/serverless-step-functions#minerva",
     "serverless-pseudo-parameters": "^2.1.0"

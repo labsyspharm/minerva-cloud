@@ -73,27 +73,13 @@ functions:
     events:
       - http:
           method: GET
-          caching:
-            enabled: true
-            cacheKeyParameters:
-              - name: request.path.uuid
-              - name: request.path.x
-              - name: request.path.y
-              - name: request.path.z
-              - name: request.path.t
-              - name: request.path.level
-              - name: request.path.channel_group
-
-
           cors: true
           path: /image/{uuid}/prerendered-tile/{x}/{y}/{z}/{t}/{level}/{channel_group}
           contentHandling: CONVERT_TO_BINARY
           authorizer:
-            arn: 'Fn::ImportValue': ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
-          #authorizer:
-          #  type: COGNITO_USER_POOLS
-          #  authorizerId:
-          #    Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+            name: MinervaApiCustomAuthorizer
+            arn:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
 
   renderRegion:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-renderRegion
@@ -101,6 +87,8 @@ functions:
     events:
       - http:
           method: GET
+          caching:
+            enabled: false
           cors: true
           path: /image/{uuid}/render-region/{x}/{y}/{width}/{height}/{z}/{t}/{channels+}
           contentHandling: CONVERT_TO_BINARY
@@ -114,26 +102,16 @@ plugins:
   - serverless-python-requirements
   - serverless-pseudo-parameters
   - serverless-apigwy-binary
-  - serverless-api-gateway-caching
 
 custom:
   apigwBinary:
     types:
       - "image/png"
       - "image/jpeg"
-      -
-  apiGatewayCaching:
-    enabled: true
-    clusterSize: '6.1' # defaults to '0.5'
-    ttlInSeconds: 300 # defaults to the maximum allowed: 3600
-    dataEncrypted: false # defaults to false
-    perKeyInvalidation:
-      requireAuthorization: true # default is true
-      handleUnauthorizedRequests: Ignore # default is "IgnoreWithWarning"
 
   pythonRequirements:
-    useDownloadCache: false
-    useStaticCache: false
+    useDownloadCache: true
+    useStaticCache: true
     dockerizePip: non-linux
     dockerFile: Dockerfile
     slim: true

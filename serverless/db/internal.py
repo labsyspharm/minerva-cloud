@@ -10,7 +10,7 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
 from minerva_db.sql.api import Client
-from minerva_db.sql.models import Base, User
+from minerva_db.sql.models import Base, User, Group, Membership
 
 
 logger = logging.getLogger()
@@ -104,10 +104,15 @@ def _validate_uuid(u):
 
 # TODO Any active connection will block this. Use scoped sessions in all
 # lambdas to overcome this
-def _init_db(event, context):
-    connection_string = URL('postgresql', username=db_user,
+def _init_db_handler(event, context):
+    _init_db('postgresql', username=db_user,
                             password=db_password, host=db_host, port=db_port,
                             database=db_name)
+
+def _init_db(drivername, username, password, host, port, database):
+    connection_string = URL(drivername, username=username,
+                            password=password, host=host, port=port,
+                            database=database)
     engine = create_engine(connection_string)
     DBSession.close_all()
 
@@ -117,7 +122,7 @@ def _init_db(event, context):
     with engine.connect() as conn:
         conn.execute('DROP SCHEMA public CASCADE')
         conn.execute('CREATE SCHEMA public')
-        conn.execute(f'GRANT ALL ON SCHEMA public TO {db_user}')
+        conn.execute(f'GRANT ALL ON SCHEMA public TO {username}')
 
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
@@ -132,14 +137,38 @@ def _init_db(event, context):
     idp = boto3.client('cognito-idp')
     response = idp.list_users(
         UserPoolId=user_pool_id,
-        AttributesToGet=[]
+        AttributesToGet=['preferred_username']
     )
 
     # Create the existing users
-    users = [User(user['Username']) for user in response['Users']]
+    print(response)
+    users = []
+    for cognito_user in response['Users']:
+        user = User(cognito_user['Username'])
+        if 'Attributes' in cognito_user:
+            for name_value in cognito_user['Attributes']:
+                if name_value['Name'] == 'preferred_username':
+                    user.name = name_value['Value']
+
+        users.append(user)
+
     session.add_all(users)
     session.commit()
 
+    # Create Guest user
+    guest = User("00000000-0000-0000-0000-000000000000", "Guest")
+    session.add(guest)
+
+    # Create public read group
+    group_uuid = str(uuid4())
+    public_read = Group(group_uuid, "MinervaPublicRead")
+    session.add(public_read)
+
+    # Make Guest user a member of public read group
+    membership = Membership(public_read, guest)
+    session.add(membership)
+
+    session.commit()
 
 def _query_db(event, context):
     connection_string = URL('postgresql', username=db_user,

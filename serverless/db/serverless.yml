@@ -196,9 +196,10 @@ functions:
           cors: true
           path: /repository/{uuid}
           authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId:
-              Ref: ApiGatewayAuthorizer
+            name: MinervaDbCustomAuthorizer
+            type: token
+            arn:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
 
   getImage:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getImage
@@ -209,9 +210,11 @@ functions:
           cors: true
           path: /image/{uuid}
           authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId:
-              Ref: ApiGatewayAuthorizer
+            name: MinervaDbCustomAuthorizer
+            type: token
+            arn:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
+
 
   getImageDimensions:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getImageDimensions
@@ -222,9 +225,10 @@ functions:
           cors: true
           path: /image/{uuid}/dimensions
           authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId:
-              Ref: ApiGatewayAuthorizer
+            name: MinervaDbCustomAuthorizer
+            type: token
+            arn:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
 
   getImageCredentials:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getImageCredentials
@@ -235,9 +239,11 @@ functions:
           cors: true
           path: /image/{uuid}/credentials
           authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId:
-              Ref: ApiGatewayAuthorizer
+            name: MinervaDbCustomAuthorizer
+            type: token
+            arn:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
+
 
   getImport:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getImport
@@ -326,9 +332,11 @@ functions:
           cors: true
           path: /repository/{uuid}/images
           authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId:
-              Ref: ApiGatewayAuthorizer
+            name: MinervaDbCustomAuthorizer
+            type: token
+            arn:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
+
 
 #  listKeysInFileset:
 #    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listKeysInFileset
@@ -463,7 +471,7 @@ functions:
   # Internal
   initDb:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-initDb
-    handler: internal._init_db
+    handler: internal._init_db_handler
 
   queryDb:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-queryDb
@@ -494,9 +502,11 @@ functions:
          cors: true
          path: /repository
          authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId:
-              Ref: ApiGatewayAuthorizer
+           name: MinervaDbCustomAuthorizer
+           type: token
+           arn:
+             Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
+
 
   listGrantsForRepository:
    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-listGrantsForRepository
@@ -650,7 +660,18 @@ plugins:
   - serverless-pseudo-parameters
   - serverless-apigw-binary
   - serverless-plugin-split-stacks
+  - serverless-api-gateway-caching
+
 custom:
+  apiGatewayCaching:
+    enabled: true
+    clusterSize: '6.1'
+    ttlInSeconds: 900
+    dataEncrypted: false
+    perKeyInvalidation:
+      requireAuthorization: true
+      handleUnauthorizedRequests: Ignore
+
   pythonRequirements:
     useDownloadCache: false
     useStaticCache: false
