@@ -3,12 +3,16 @@ import os
 import base64
 import json
 import logging
+import time
+
+import boto3
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
 logging.getLogger().setLevel(logging.INFO)
 
 os.environ['STACK_PREFIX'] = 'minerva-juha'
 os.environ['STAGE'] = 'dev'
+os.environ['AWS_REGION'] = 'us-east-1'
 
 logging.info("Start api_handler imports")
 from api.handler import handler as api_handler
@@ -16,6 +20,7 @@ logging.info("End api_handler imports")
 logging.info("Start db_handler imports")
 from db.handler import handler as db_handler
 logging.info("End db_handler imports")
+from db.internal import _init_db as init_db
 
 from lambda_helpers import EventBuilder
 
@@ -42,24 +47,34 @@ def prerendered_tile(image_uuid, level, x, y, channel_group):
         f.write(img)
 
 
-def render_tile(uuid, color="FFFFFF"):
+def render_tile(uuid, x=0, y=0, level=0, channels="0,FFFFFF,0,1", filename=None):
     parameters = {
         "uuid": uuid,
-        "x": 0,
-        "y": 0,
+        "x": x,
+        "y": y,
         "z": 0,
         "t": 0,
-        "level": 0,
-        "channels": "0," + color + ",0,1"
+        "level": level,
+        "channels": channels
     }
     event = EventBuilder().path_parameters(parameters).build()
     res = api_handler.render_tile(event, None)
     img_base64 = res["body"]
     img = base64.b64decode(img_base64)
 
-    with open('./render_tile_test.jpg', 'wb') as f:
+    channel = channels.split(',')[0]
+    if filename is None:
+        filename = "C{}-T0-Z0-L{}-Y{}-X{}.jpg".format(channel, level, y, x)
+    with open(filename, 'wb') as f:
         f.write(img)
 
+def get_image_credentials(uuid):
+    parameters = {
+        "uuid": uuid
+    }
+    event = EventBuilder().path_parameters(parameters).build()
+    res = db_handler.get_image_credentials(event, None)
+    return res
 
 def create_rendering_settings():
     parameters = {
@@ -173,6 +188,11 @@ def grant_repository_to_user(repository_uuid, user_uuid):
     }
     event = EventBuilder().body(body).build()
     res = db_handler.grant_resource_to_user(event, None)
+    print(res)
+
+def update_repository(uuid, data):
+    event = EventBuilder().path_parameters({"uuid": uuid}).body(data).build()
+    res = db_handler.update_repository(event, None)
     print(res)
 
 def create_metadata(image_uuid):
@@ -303,12 +323,21 @@ def create_metadata(image_uuid):
 #create_image("Testi", 3, "48001701-d606-4fc8-b3fd-51dcf64296ef")
 #get_image("4b7274d1-44de-4bda-989d-9ed48d24c1ac")
 
+#res = get_image_credentials("aec99d4d-e259-4ae8-a3b5-923ad7beed27")
+#print(res)
+
 #for x in range(1, 5):
 #    prerendered_tile(image_uuid="4b7274d1-44de-4bda-989d-9ed48d24c1ac", level=1, x=x, y=0, channel_group="5c7274d1-44de-4bda-989d-9ed48d24c1bd")
 
-#render_tile("ada68902-4cac-49ca-9866-cc46bfff66b4", "0000FF")
+#render_tile("540fa7e9-2579-4496-84a7-9f525552d502z", x=2, y=1, level=1, channels="12,0000FF,0.30518044,1")
+#render_tile("540fa7e9-2579-4496-84a7-9f525552d502", x=2, y=1, level=1, channels="17,00FF00,0.045777066,0.534065766")
+#render_tile("540fa7e9-2579-4496-84a7-9f525552d502", x=2, y=1, level=1, channels="13,FF0000,0.061036088,0.228885328")
+#render_tile("540fa7e9-2579-4496-84a7-9f525552d502", x=2, y=1, level=1, channels="18,FFFFFF,0.061036088,0.534065766")
+
+#render_tile("540fa7e9-2579-4496-84a7-9f525552d502", x=2, y=1, level=1, channels="12,0000FF,0.30518044,1/17,00FF00,0.045777066,0.534065766/13,FF0000,0.061036088,0.228885328/18,FFFFFF,0.061036088,0.534065766", filename="tile_blended.jpg")
+
 #create_metadata("aec99d4d-e259-4ae8-a3b5-923ad7beed27")
-#prerendered_tile("aec99d4d-e259-4ae8-a3b5-923ad7beed27", 4, 0, 0, "12c99d4d-e259-4ae8-a3b5-923ad7beed00")
+prerendered_tile("aec99d4d-e259-4ae8-a3b5-923ad7beed27", 4, 0, 0, "12c99d4d-e259-4ae8-a3b5-923ad7beed00")
 
 #res = db_handler.delete_repository(EventBuilder().path_parameters({ "uuid": "48001701-d606-4fc8-b3fd-51dcf64296ef"}).build(), None)
 #print(res)
@@ -320,6 +349,22 @@ def create_metadata(image_uuid):
 #list_rendering_settings()
 
 #list_grants_for_repository("d3c20894-5831-4273-b2f5-1be266a1a8cb")
-grant_repository_to_user("d3c20894-5831-4273-b2f5-1be266a1a8cb", "de09a291-1c75-442d-b8f8-e257dd455232")
+#grant_repository_to_user("d3c20894-5831-4273-b2f5-1be266a1a8cb", "de09a291-1c75-442d-b8f8-e257dd455232")
 #find_user("juha")
 
+# event = {
+#     'authorizationToken': 'Bearer eyJraWQiOiJkdld5SFBwa2hPQWxrOTVEMUlmaWZ5RzFZSDNLanEyc2tRaHRTdlwvaHIrWT0iLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJkOWU4Y2FjMC01YjA4LTQzZDYtODRmYi04MzAzNDQ3NzgzYTYiLCJhdWQiOiJjdnV1dXVvZ2g2bm1xbTg0OTFpaXUxbGg1IiwiZXZlbnRfaWQiOiI5NmFlY2I3MC02ZDQ2LTQ5ZjMtYjcxYy1jYzZmNzMwNTc0ZDMiLCJ0b2tlbl91c2UiOiJpZCIsImF1dGhfdGltZSI6MTU4NDA0NjcxMSwiaXNzIjoiaHR0cHM6XC9cL2NvZ25pdG8taWRwLnVzLWVhc3QtMS5hbWF6b25hd3MuY29tXC91cy1lYXN0LTFfZDNXdXN4NnFwIiwiY29nbml0bzp1c2VybmFtZSI6ImQ5ZThjYWMwLTViMDgtNDNkNi04NGZiLTgzMDM0NDc3ODNhNiIsImV4cCI6MTU4NTA1NzUzMCwiaWF0IjoxNTg1MDUzOTMwLCJlbWFpbCI6Imp1aGFfcnVva29uZW5AaG1zLmhhcnZhcmQuZWR1In0.cQIlziOeAG00TMz855_os1hejT9Gk-3IuBvDOZtGYmGh8gHZ_3EDklZXdi-FqDxeCTnZBFoSZ0w7iw41GfMwjkMQyd4DE5-p0GgA-mM2hPzuaGtu6dxy6d0gxH8qDRuqCfES0uaC3N3JhJFsGszHHRWZ1z7hylboya6sOlo9PJ4H_Lfob6jVpeqdm5TM2kdJ6sIKYUgNLk3SvJNTjmJxiQY8Uu47HuQvwAaDXpbGeXyfpnOEeRLmPalwQ3vLE7tNlhSvAIb-Yb0sUURb6E4JG4B64coh7ryTDr9UZ7iA-WiWHSIE9Jiq23kBj5rnzmmnAXpcDaowFzFyVUfbj8OvUw',
+#     'methodArn': 'arn:aws:execute-api:us-east-1:292075781285:3v21j4dh1d/dev/GET/authtest'
+# }
+# auth_handler.authorize_request(event, None)
+
+#event = {
+#     'authorizationToken': 'Bearer Anonymouszz',
+#     'methodArn': 'arn:aws:execute-api:us-east-1:292075781285:3v21j4dh1d/dev/GET/authtest'
+# }
+
+#auth_handler.authorize_request(event, None)
+
+#init_db('postgresql', 'minerva_test', 'minerva_test', 'localhost', 5432, 'minerva_test')
+
+#update_repository("5611b0c8-b565-4e08-9e8a-b1b27c974d12", {"raw_storage": "Destroy", "access": "Private"})
