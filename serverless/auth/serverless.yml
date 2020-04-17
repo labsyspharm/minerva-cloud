@@ -1,4 +1,4 @@
-service: ${file(${opt:configfile}):StackPrefix}-${file(${opt:configfile}):Stage}-serverless-api
+service: ${file(${opt:configfile}):StackPrefix}-${file(${opt:configfile}):Stage}-serverless-auth
 
 package:
   exclude:
