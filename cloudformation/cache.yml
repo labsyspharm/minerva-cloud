@@ -1,0 +1,65 @@
+# CloudFormation script to add Redis cache instance for storing prerendered tiles
+
+Parameters:
+  StackPrefix:
+    Type: String
+    Description: Unique prefix used in related stacks for use by export
+  Stage:
+    Type: String
+    Description: Deployment stage
+  ProjectTag:
+    Type: String
+    Description: Project tag
+  DefaultSecurityGroup:
+    Type: String
+    Description: DefaultSecurityGroup
+  CacheNodeType:
+    Type: String
+    Description: EC2 Instance type of the cache node
+
+Resources:
+  ElastiCache:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      AutoMinorVersionUpgrade: False
+      AZMode: single-az
+      CacheNodeType: !Ref CacheNodeType
+      CacheParameterGroupName: !Ref RedisParameters
+      ClusterName: !Sub minerva-${StackPrefix}-${Stage}-cache
+      Engine: redis
+      NumCacheNodes: 1
+      Port: 6379
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
+      VpcSecurityGroupIds:
+        - !Ref DefaultSecurityGroup
+        - Fn::ImportValue:
+            !Sub ${StackPrefix}-${Stage}-GeneralSGID
+
+  RedisParameters:
+    Type: 'AWS::ElastiCache::ParameterGroup'
+    Properties:
+      Description: RedisParameters
+      CacheParameterGroupFamily: redis5.0
+      Properties:
+        # allkeys-lfu: The service evicts the least frequently used keys out of all keys.
+        # This is a good fit for tiles because there is a clear usage pattern - the lower detail
+        # level tiles are requested more frequently than higher details tiles.
+        maxmemory-policy: 'allkeys-lfu'
+
+  ElastiCacheHost:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/cache/ElastiCacheHost
+      Description: ElastiCache Host
+      Type: String
+      Value: !GetAtt ElastiCache.RedisEndpoint.Address
+
+  ElastiCachePort:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/cache/ElastiCachePort
+      Description: ElastiCache Port
+      Type: String
+      Value: !GetAtt ElastiCache.RedisEndpoint.Port

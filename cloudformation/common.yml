@@ -48,6 +48,22 @@ Resources:
         - Key: project
           Value: !Ref ProjectTag
 
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - "*"
+            AllowedMethods:
+              - POST
+                GET
+                PUT
+                DELETE
+                HEAD
+            AllowedHeaders:
+              - "*"
+            ExposedHeaders:
+              - "ETag"
+          
+
   TileBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -119,10 +135,12 @@ Resources:
     Type: AWS::RDS::DBInstance
     Properties:
       DBName : minerva
+      DBInstanceIdentifier: !Sub ${StackPrefix}-${Stage}-database
       AllocatedStorage: 20
       DBInstanceClass: db.t2.micro
       Engine: postgres
       EngineVersion: 10.9
+      BackupRetentionPeriod: 30
       MasterUsername: minerva
       MasterUserPassword: !Ref DatabasePassword
       DBSubnetGroupName: !Ref DBSubnetGroup

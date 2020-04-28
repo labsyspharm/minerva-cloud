@@ -21,7 +21,7 @@ Parameters:
     Type: String
     Description: Desired EC2 cluster size
   BatchClusterSpotMinCpus:
-    Type: String
+    Type: StringVpcSecurityGroupIds
     Description: Minimum Spot cluster size
   BatchClusterSpotMaxCpus:
     Type: String
@@ -326,10 +326,10 @@ Resources:
           - Ref::reader_version
           - Ref::bucket
           - Ref::fileset_uuid
-        Memory: 7870
+        Memory: 15000
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 1
-        Image: sorgerlab/bfextractor:0.0.6
+        Image: sorgerlab/bfextractor:0.0.8
       RetryStrategy:
         Attempts: 2
 

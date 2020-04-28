@@ -33,6 +33,12 @@ def make_parameter(key, value):
         'ParameterValue': value
     }
 
+def print_stack_error(cf, stack_id):
+    res = cf.describe_stack_events(StackName=stack_id)
+    for event in res["StackEvents"]:
+        if "FAILED" in event["ResourceStatus"]:
+            print(event["ResourceStatus"])
+            print(event["ResourceStatusReason"])
 
 def string_configs_to_parameters(config, keys):
 
@@ -80,6 +86,11 @@ def prepare_cognito_parameters(config):
 
     return []
 
+def prepare_cache_parameters(config):
+    return string_configs_to_parameters(config, [
+        'DefaultSecurityGroup',
+        'CacheNodeType'
+    ])
 
 def main(operation, stack, config):
 
@@ -130,6 +141,8 @@ def main(operation, stack, config):
         parameters = prepare_cognito_parameters(config)
     elif stack == 'batch':
         parameters = prepare_batch_parameters(config)
+    elif stack == 'cache':
+        parameters = prepare_cache_parameters(config)
 
     if operation in ['create', 'update']:
         # Trigger the operation
@@ -161,6 +174,7 @@ def main(operation, stack, config):
 
     status = ""
     print('Waiting for stack update to complete')
+    rollback = False
     while poll_progress:
         sys.stdout.write('-')
         time.sleep(2)
@@ -173,11 +187,16 @@ def main(operation, stack, config):
                     sys.stdout.write('>' + status)
                     poll_progress = 'IN_PROGRESS' in status
 
+                if 'ROLLBACK' in stack['StackStatus']:
+                    rollback = True
+
         sys.stdout.flush()
 
     print("")
     print("Stack status: ", status)
 
+    if rollback:
+        print_stack_error(cf, stack_id)
 
 
 if __name__ == '__main__':
@@ -186,6 +205,7 @@ if __name__ == '__main__':
         common = 'common'
         cognito = 'cognito'
         batch = 'batch'
+        cache = 'cache'
 
         def __str__(self):
             return self.value

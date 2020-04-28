@@ -16,15 +16,18 @@ Resources:
     Properties:
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: True
+        InviteMessageTemplate:
+          EmailMessage: Welcome to Minerva! Your username is {username} and temporary password is {####}.
+          EmailSubject: New Minerva account created
       AutoVerifiedAttributes:
         - email
       DeviceConfiguration:
         ChallengeRequiredOnNewDevice: False
         DeviceOnlyRememberedOnUserPrompt: False
       EmailVerificationMessage: !Sub |
-        Welcome to ${StackPrefix}-${Stage}.
+        Welcome to Minerva!
         Please verify your email address. Your verification code is {####}
-      EmailVerificationSubject: !Sub "Verification: ${StackPrefix}-${Stage}!"
+      EmailVerificationSubject: !Sub "[Minerva] Please verify your email address."
       LambdaConfig:
         PreSignUp: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${StackPrefix}-${Stage}-createUser
       Policies:
@@ -32,7 +35,7 @@ Resources:
           MinimumLength: 8
           RequireLowercase: True
           RequireNumbers: True
-          RequireSymbols: True
+          RequireSymbols: False
           RequireUppercase: True
       Schema:
         - Name: name
