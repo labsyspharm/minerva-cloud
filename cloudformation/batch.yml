@@ -21,7 +21,7 @@ Parameters:
     Type: String
     Description: Desired EC2 cluster size
   BatchClusterSpotMinCpus:
-    Type: StringVpcSecurityGroupIds
+    Type: String
     Description: Minimum Spot cluster size
   BatchClusterSpotMaxCpus:
     Type: String
@@ -147,6 +147,7 @@ Resources:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
       Type: MANAGED
+      AllocationStrategy: BEST_FIT_PROGRESSIVE
       ComputeEnvironmentName: !Sub ${StackPrefix}-${Stage}-ec2
       ServiceRole: !GetAtt BatchServiceRole.Arn
       ComputeResources:
@@ -158,6 +159,10 @@ Resources:
         ImageId: !Ref BatchAMI
         InstanceTypes:
           - optimal
+          - t3.micro
+          - m5a.large
+          - m5a.xlarge
+          - m5a.2xlarge
         SecurityGroupIds:
           - Fn::ImportValue:
               !Sub ${StackPrefix}-${Stage}-GeneralSGID
@@ -171,6 +176,7 @@ Resources:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
       Type: MANAGED
+      AllocationStrategy: BEST_FIT_PROGRESSIVE
       ComputeEnvironmentName: !Sub ${StackPrefix}-${Stage}-spot
       ServiceRole: !GetAtt BatchServiceRole.Arn
       ComputeResources:
@@ -237,35 +243,6 @@ Resources:
         Attempts: 2
 
   # Bio-Formats Scan Job Definitions
-  BFScanJobDef001:
-    Type: AWS::Batch::JobDefinition
-    Properties:
-      Type: container
-      JobDefinitionName: !Sub ${StackPrefix}-${Stage}-bfscan-001
-      ContainerProperties:
-        Environment:
-          - Name: STACKPREFIX
-            Value: !Ref StackPrefix
-          - Name: STAGE
-            Value: !Ref Stage
-        MountPoints:
-          - ReadOnly: false
-            SourceVolume: efs
-            ContainerPath: /tmp/aws
-        Volumes:
-          - Host:
-              SourcePath: /mnt/efs
-            Name: efs
-        Command:
-          - Ref::dir
-          - Ref::extract_job_definition_arn
-        Memory: 512
-        JobRoleArn: !GetAtt BatchRole.Arn
-        Vcpus: 1
-        Image: sorgerlab/bfscanner:0.0.1
-      RetryStrategy:
-        Attempts: 2
-
   BFScanJobDef002:
     Type: AWS::Batch::JobDefinition
     Properties:
@@ -326,9 +303,9 @@ Resources:
           - Ref::reader_version
           - Ref::bucket
           - Ref::fileset_uuid
-        Memory: 15000
+        Memory: 30000  # FIXME look into memory optimizing bfextract
         JobRoleArn: !GetAtt BatchRole.Arn
-        Vcpus: 1
+        Vcpus: 2
         Image: sorgerlab/bfextractor:0.0.8
       RetryStrategy:
         Attempts: 2

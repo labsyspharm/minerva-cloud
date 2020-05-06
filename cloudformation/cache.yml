@@ -1,4 +1,5 @@
 # CloudFormation script to add Redis cache instance for storing prerendered tiles
+# and another Redis cache instance for storing raw tiles.
 
 Parameters:
   StackPrefix:
@@ -15,7 +16,10 @@ Parameters:
     Description: DefaultSecurityGroup
   CacheNodeType:
     Type: String
-    Description: EC2 Instance type of the cache node
+    Description: EC2 Instance type of the rendered tiles cache node
+  RawCacheNodeType:
+    Type: String
+    Description: EC2 Instance type of the raw tiles cache node
 
 Resources:
   ElastiCache:
@@ -26,6 +30,25 @@ Resources:
       CacheNodeType: !Ref CacheNodeType
       CacheParameterGroupName: !Ref RedisParameters
       ClusterName: !Sub minerva-${StackPrefix}-${Stage}-cache
+      Engine: redis
+      NumCacheNodes: 1
+      Port: 6379
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
+      VpcSecurityGroupIds:
+        - !Ref DefaultSecurityGroup
+        - Fn::ImportValue:
+            !Sub ${StackPrefix}-${Stage}-GeneralSGID
+
+  ElastiCacheRaw:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      AutoMinorVersionUpgrade: False
+      AZMode: single-az
+      CacheNodeType: !Ref RawCacheNodeType
+      CacheParameterGroupName: !Ref RedisParametersRaw
+      ClusterName: !Sub minerva-${StackPrefix}-${Stage}-rawcache
       Engine: redis
       NumCacheNodes: 1
       Port: 6379
@@ -48,11 +71,23 @@ Resources:
         # level tiles are requested more frequently than higher details tiles.
         maxmemory-policy: 'allkeys-lfu'
 
+  RedisParametersRaw:
+    Type: 'AWS::ElastiCache::ParameterGroup'
+    Properties:
+      Description: RedisParameters for Raw tile cache
+      CacheParameterGroupFamily: redis5.0
+      Properties:
+        # allkeys-lru: The service evicts the least recently used keys out of all keys
+        # Some raw tiles are accessed very frequently when adjusting gate values,
+        # but after that they might be never accessed again. Least recently used is
+        # therefore a good policy for raw tiles.
+        maxmemory-policy: 'allkeys-lru'
+
   ElastiCacheHost:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub /${StackPrefix}/${Stage}/cache/ElastiCacheHost
-      Description: ElastiCache Host
+      Description: ElastiCache Prerendered Host
       Type: String
       Value: !GetAtt ElastiCache.RedisEndpoint.Address
 
@@ -60,6 +95,22 @@ Resources:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub /${StackPrefix}/${Stage}/cache/ElastiCachePort
-      Description: ElastiCache Port
+      Description: ElastiCache Prerendered Port
       Type: String
       Value: !GetAtt ElastiCache.RedisEndpoint.Port
+
+  ElastiCacheHostRaw:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/cache/ElastiCacheHostRaw
+      Description: ElastiCache Raw Host
+      Type: String
+      Value: !GetAtt ElastiCacheRaw.RedisEndpoint.Address
+
+  ElastiCachePortRaw:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/cache/ElastiCachePortRaw
+      Description: ElastiCache Raw Port
+      Type: String
+      Value: !GetAtt ElastiCacheRaw.RedisEndpoint.Port

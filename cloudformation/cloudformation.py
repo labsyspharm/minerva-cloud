@@ -89,7 +89,8 @@ def prepare_cognito_parameters(config):
 def prepare_cache_parameters(config):
     return string_configs_to_parameters(config, [
         'DefaultSecurityGroup',
-        'CacheNodeType'
+        'CacheNodeType',
+        'RawCacheNodeType'
     ])
 
 def main(operation, stack, config):

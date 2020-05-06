@@ -118,6 +118,10 @@ Resources:
       Family: postgres10
       Parameters:
         shared_preload_libraries: pg_stat_statements
+        # We can use a higher value for max_connections than the default value,
+        # because most queries are lightweight. Open database connections is currently
+        # the bottleneck with how many lambdas can run concurrently.
+        max_connections: 200
       Tags:
         - Key: project
           Value: !Ref ProjectTag
