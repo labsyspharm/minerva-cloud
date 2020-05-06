@@ -10,8 +10,8 @@ provider:
     project: ${file(${opt:configfile}):ProjectTag}
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
-  runtime: python3.6
-  memorySize: 256
+  runtime: python3.7
+  memorySize: 128
   vpc:
     securityGroupIds:
       - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
@@ -35,6 +35,7 @@ functions:
   authorize:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorize
     handler: authorizer.authorize_request
+    provisionedConcurrency: 5
 
 resources:
   Outputs:
