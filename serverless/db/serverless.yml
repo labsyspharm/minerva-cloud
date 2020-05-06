@@ -6,11 +6,12 @@ package:
 
 provider:
   name: aws
+  endpointType: REGIONAL
   tags:
     project: ${file(${opt:configfile}):ProjectTag}
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
-  runtime: python3.6
+  runtime: python3.7
   memorySize: 512
   timeout: 10
   vpc:
@@ -660,17 +661,8 @@ plugins:
   - serverless-pseudo-parameters
   - serverless-apigw-binary
   - serverless-plugin-split-stacks
-  - serverless-api-gateway-caching
 
 custom:
-  apiGatewayCaching:
-    enabled: true
-    clusterSize: '6.1'
-    ttlInSeconds: 900
-    dataEncrypted: false
-    perKeyInvalidation:
-      requireAuthorization: true
-      handleUnauthorizedRequests: Ignore
 
   pythonRequirements:
     useDownloadCache: false

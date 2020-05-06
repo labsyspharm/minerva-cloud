@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
-from minerva_db.sql.api import Client
+from minerva_db.sql.api.client import Client
 from minerva_db.sql.models import Base, User, Group, Membership
 
 

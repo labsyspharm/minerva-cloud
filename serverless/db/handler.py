@@ -496,12 +496,12 @@ class Handler:
         for group in groups:
             channels = group.get('channels')
             label = group.get('label')
-            if 'id' not in group:
+            if 'uuid' not in group:
                 uuid = str(uuid4())
-                group['id'] = uuid
+                group['uuid'] = uuid
                 self.client.create_rendering_settings(uuid, image_uuid, channels, label)
             else:
-                self.client.update_rendering_settings(group['id'], channels, label)
+                self.client.update_rendering_settings(group['uuid'], channels, label)
 
         return self.body
 
@@ -671,8 +671,6 @@ class Handler:
                 raise ValueError(
                     f'Fileset has not had metadata extracted yet: {fileset_uuid}'
                 )
-
-
 
         obj = boto3.resource('s3').Object(bucket,
                                           f'{bucket_key}/metadata.xml')
