@@ -6,12 +6,14 @@ package:
 
 provider:
   name: aws
+  endpointType: REGIONAL
   tags:
     project: ${file(${opt:configfile}):ProjectTag}
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
-  runtime: python3.6
-  memorySize: 2048
+  runtime: python3.7
+  memorySize: 3008
+  versionFunctions: false
   vpc:
     securityGroupIds:
       - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
@@ -70,6 +72,8 @@ functions:
   prerenderedTile:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prerenderedTile
     handler: handler.prerendered_tile
+    memorySize: 512
+    provisionedConcurrency: 5
     events:
       - http:
           method: GET
@@ -78,6 +82,7 @@ functions:
           contentHandling: CONVERT_TO_BINARY
           authorizer:
             name: MinervaApiCustomAuthorizer
+            type: token
             arn:
               Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
 
@@ -108,10 +113,11 @@ custom:
     types:
       - "image/png"
       - "image/jpeg"
+      - "image/webp"
 
   pythonRequirements:
-    useDownloadCache: true
-    useStaticCache: true
+    useDownloadCache: false
+    useStaticCache: false
     dockerizePip: non-linux
     dockerFile: Dockerfile
     slim: true
@@ -119,3 +125,5 @@ custom:
     slimPatterns:
       - "**/cv2/data/haarcascade*.xml"
       - "**/tests/*"
+      - "boto3"
+      - "botocore"
