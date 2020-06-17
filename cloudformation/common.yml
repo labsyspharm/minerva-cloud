@@ -25,6 +25,14 @@ Parameters:
     Type: String
     Description: Database password
 
+  EnableRenderedCache:
+    Type: String
+    Description: Enable or disable rendered tiles cache
+
+  EnableRawCache:
+    Type: String
+    Description: Enable or disable raw tiles cache
+
 Resources:
   # Some of these may warrant their own stack (or potentially be a sub-stack)
   # ServiceRole for Batch
@@ -54,10 +62,10 @@ Resources:
               - "*"
             AllowedMethods:
               - POST
-                GET
-                PUT
-                DELETE
-                HEAD
+              - GET
+              - PUT
+              - DELETE
+              - HEAD
             AllowedHeaders:
               - "*"
             ExposedHeaders:
@@ -241,6 +249,22 @@ Resources:
       Description: S3 Bucket ARN for tile data
       Type: String
       Value: !GetAtt TileBucket.Arn
+
+  EnableRenderedCacheParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/cache/EnableRenderedCache
+      Description: Enable or disable use of rendered tiles cache
+      Type: String
+      Value: !Ref EnableRenderedCache
+
+  EnableRawCacheParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/cache/EnableRawCache
+      Description: Enable or disable use of raw tiles cache
+      Type: String
+      Value: !Ref EnableRawCache
 
   GeneralSGID:
     Type: AWS::SSM::Parameter

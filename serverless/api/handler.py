@@ -20,7 +20,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from minerva_db.sql.miniclient.miniclient import MiniClient
-from minerva_lib import render
+from minerva_lib import render, autosettings
 import time
 import tifffile
 import imagecodecs
@@ -42,6 +42,10 @@ def get_parameter(key):
     global _parameters
     if _parameters is None:
         _parameters = {}
+        parameters_res = []
+        #  10 parameters at most can be fetched in one request, use more and boto3 will throw an error
+        #  Let's split the parameter fetching between "common" and "cache"
+        #  TODO consolidate parameters to get all in one request
         response = ssm.get_parameters(
             Names=[
                 '/{}/{}/common/DBHost'.format(STACK_PREFIX, STAGE),
@@ -49,37 +53,53 @@ def get_parameter(key):
                 '/{}/{}/common/DBUser'.format(STACK_PREFIX, STAGE),
                 '/{}/{}/common/DBPassword'.format(STACK_PREFIX, STAGE),
                 '/{}/{}/common/DBName'.format(STACK_PREFIX, STAGE),
-                '/{}/{}/common/S3BucketTileARN'.format(STACK_PREFIX, STAGE),
+                '/{}/{}/common/S3BucketTileARN'.format(STACK_PREFIX, STAGE)
+            ]
+        )
+        parameters_res.extend(response['Parameters'])
+
+        response = ssm.get_parameters(
+            Names=[
                 '/{}/{}/cache/ElastiCacheHost'.format(STACK_PREFIX, STAGE),
                 '/{}/{}/cache/ElastiCachePort'.format(STACK_PREFIX, STAGE),
                 '/{}/{}/cache/ElastiCacheHostRaw'.format(STACK_PREFIX, STAGE),
-                '/{}/{}/cache/ElastiCachePortRaw'.format(STACK_PREFIX, STAGE)
+                '/{}/{}/cache/ElastiCachePortRaw'.format(STACK_PREFIX, STAGE),
+                '/{}/{}/cache/EnableRenderedCache'.format(STACK_PREFIX, STAGE),
+                '/{}/{}/cache/EnableRawCache'.format(STACK_PREFIX, STAGE)
             ]
         )
-        for p in response['Parameters']:
-            key = p['Name']
-            value = p['Value']
-            _parameters[key] = value
+        parameters_res.extend(response['Parameters'])
+        for p in parameters_res:
+            _key = p['Name']
+            _value = p['Value']
+            _parameters[_key] = _value
 
     return _parameters[key]
 
+
 bucket = get_parameter('/{}/{}/common/S3BucketTileARN'.format(STACK_PREFIX, STAGE))
+pool = ThreadPool(6)
 
 # Initialize Redis cache for prerendered tiles
 cache_host = get_parameter('/{}/{}/cache/ElastiCacheHost'.format(STACK_PREFIX, STAGE))
 cache_port = get_parameter('/{}/{}/cache/ElastiCachePort'.format(STACK_PREFIX, STAGE))
+enable_rendered_cache = get_parameter('/{}/{}/cache/EnableRenderedCache'.format(STACK_PREFIX, STAGE))
 redis_client = None
-if cache_host is not None:
+if cache_host is not None and enable_rendered_cache == "1" and os.environ.get("AWS_EXECUTION_ENV") is not None:
     logging.info("Connecting to prerendered tiles Redis host: %s:%s", cache_host, cache_port)
     redis_client = redis.Redis(host=cache_host, port=cache_port, socket_connect_timeout=1)
-
+else:
+    logging.info("Rendered tiles cache is disabled")
 # Initialize Redis cache for raw tiles
 cache_host_raw = get_parameter('/{}/{}/cache/ElastiCacheHostRaw'.format(STACK_PREFIX, STAGE))
 cache_port_raw = get_parameter('/{}/{}/cache/ElastiCachePortRaw'.format(STACK_PREFIX, STAGE))
+enable_raw_cache = get_parameter('/{}/{}/cache/EnableRawCache'.format(STACK_PREFIX, STAGE))
 redis_client_raw = None
-if cache_host is not None:
+if cache_host is not None and enable_raw_cache == "1" and os.environ.get("AWS_EXECUTION_ENV") is not None:
     logging.info("Connecting to raw tiles Redis host: %s:%s", cache_host_raw, cache_port_raw)
     redis_client_raw = redis.Redis(host=cache_host_raw, port=cache_port_raw, socket_connect_timeout=1)
+else:
+    logging.info("Raw tiles cache is disabled")
 
 class AuthError(Exception):
     pass
@@ -187,27 +207,28 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
         @wraps(fn)
         def wrapped(self, event, context):
 
-            # Create a session and client to handle this request
-            self.session = DBSession()
-            self.client = MiniClient(self.session)
-
             # Execute the requested function and make a response or error
             # response
             try:
                 self.body = _event_body(event)
                 self.user_uuid = _event_user(event)
                 print(event)
-                if "Accept" in event["headers"]:
-                    accept = event["headers"]["Accept"]
+                self.content_type = "image/jpeg"
+                binary = True
+                if "accept" in event["headers"]:
+                    accept = event["headers"]["accept"]
                     accept_values = accept.split(',')
-                    if "image/webp" in accept_values:
-                        self.content_type = "image/webp"
-                    elif "image/jpeg" in accept_values:
-                        self.content_type = "image/jpeg"
-                else:
-                    self.content_type = "image/jpeg"
+                    if "application/json" in accept_values:
+                        binary = False
+                    # Disable webp for now because compression is slow
+                    #if "image/webp" in accept_values:
+                    #    self.content_type = "image/webp"
 
-                return make_binary_response(code, fn(self, event, context), content_type=self.content_type)
+                if binary:
+                    return make_binary_response(code, fn(self, event, context), content_type=self.content_type)
+                else:
+                    return make_response(code, fn(self, event, context))
+
             except KeyError as e:
                 return make_response(400, {'error': str(e)})
             except (ValueError, AspectRatioError) as e:
@@ -220,7 +241,8 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
                 logger.exception(e)
                 return make_response(500, {'error': str(e)})
             finally:
-                self.session.close()
+                if self.session is not None:
+                    self.session.close()
 
         return wrapped
     return wrapper
@@ -278,10 +300,11 @@ def handle_missing_tile(uuid, x, y, z, t, c, level):
     )
 
 class S3TileProvider:
-    def __init__(self, tile_bucket, missing_tile_callback=None, cache_client=None):
+    def __init__(self, tile_bucket, missing_tile_callback=None, cache_client=None, compress=True):
         self.bucket = tile_bucket
         self.missing_tile_callback = missing_tile_callback
         self.cache_client = cache_client
+        self.compress = compress
 
     def get_tile(self, uuid, x, y, z, t, c, level):
         '''Fetch a specific Tiff from S3 and decode'''
@@ -291,8 +314,6 @@ class S3TileProvider:
         key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}.tif'
 
         try:
-            logger.info("Fetching tile %s/%s", self.bucket, key)
-
             data = self._get_cached_object(key)
             if data is None:
                 data = self._s3_get_object(key)
@@ -302,7 +323,7 @@ class S3TileProvider:
 
             stream = BytesIO(data)
             image = tifffile.imread(stream)
-            logger.info("%s - Fetch COMPLETE %s ms", key, str(t))
+
             return image
 
         except ClientError as e:
@@ -320,12 +341,16 @@ class S3TileProvider:
     def _get_cached_object(self, key):
         data = None
         if self.cache_client is not None:
+            logging.info("Get cache START")
             data = self.cache_client.get(key)
+            logging.info("Get cache END")
         return data
 
     def _put_cached_object(self, key, data):
         if self.cache_client is not None:
+            logging.info("Put cache START")
             self.cache_client.set(key, data)
+            logging.info("Put cache END")
 
     def _s3_get_object(self, key):
         obj = boto3.resource('s3').Object(self.bucket, key)
@@ -407,8 +432,50 @@ def _channels_json_to_params(channels):
 
     return params
 
+def _parse_omero_tile(tile):
+    t = tile.split(',')
+    # level, x, y, width, height
+    return int(t[0]), int(t[1]), int(t[2])
+
+def _parse_omero_channels(c):
+    # c=1|0:65535$FF0000,2|0:65535$00FF00...
+    channels = []
+
+    channels_str = c.split(',')
+    for channel_str in channels_str:
+        channel_id = int(channel_str.split('|')[0])
+        if channel_id < 0:
+            continue  # Channel is off
+
+        settings = channel_str.split('|')[1]
+
+        min_and_max = settings.split('$')[0]
+        cmin = int(min_and_max.split(':')[0])
+        cmax = int(min_and_max.split(':')[1])
+
+        color = settings.split('$')[1]
+
+        channel = {
+            'index': channel_id-1,  # Omero channel indexing starts from 1
+            'color': np.float32([c / 255 for c in _hex_to_rgb(color)]),
+            'min': np.float32(cmin / 65535),
+            'max': np.float32(cmax / 65535)
+        }
+        channels.append(channel)
+
+    return channels
 
 class Handler:
+
+    def __init__(self):
+        self.session = None
+        self.client = None
+
+    def _open_session(self):
+        if self.session is None:
+            # Create a session and client to handle this request
+            self.session = DBSession()
+            self.client = MiniClient(self.session)
 
     def _has_image_permission(self, user: str, resource: str,
                               permission: str):
@@ -422,7 +489,20 @@ class Handler:
         Raises:
             AuthError: If the user does not have permission.
         '''
-        if not self.client.has_image_permission(user, resource, permission):
+        key = "{}/{}/{}".format(user, resource, permission)
+        permitted = None
+        if redis_client_raw is not None:
+            permitted = redis_client_raw.get(key)
+            if permitted is not None:
+                permitted = bool(permitted)
+
+        if permitted is None:
+            self._open_session()
+            permitted = self.client.has_image_permission(user, resource, permission)
+            if redis_client_raw is not None:
+                redis_client_raw.set(key, int(permitted), ex=300)
+
+        if not permitted:
             raise AuthError('Permission Denied')
 
     def _get_prerendered_from_cache(self, uuid, x, y, z, t, level, channel_group_uuid):
@@ -473,16 +553,29 @@ class Handler:
         channels = [_parse_channel_params(param)
                     for param in channel_path_params]
 
-        codec = 'jpg'
-        if self.content_type == "image/webp":
-            codec = 'webp'
+        return self._render_tile(uuid, x, y, z, t, level, channels, gamma=gamma, codec='jpg')
 
-        return self._render_tile(uuid, x, y, z, t, level, channels, gamma=gamma, codec=codec)
+    @response(200)
+    def omero_render_tile(self, event, context):
+        uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(uuid)
+        self._has_image_permission(self.user_uuid, uuid, 'Read')
+
+        z = int(_event_path_param(event, 'z'))
+        t = int(_event_path_param(event, 't'))
+        tile = _event_query_param(event, 'tile')
+        level, x, y = _parse_omero_tile(tile)
+        c = _event_query_param(event, 'c')
+        channels = _parse_omero_channels(c)
+        if not channels:
+            #  TODO if all channels are off, should return HTTP status "No content"
+            return np.zeros(shape=(1, 1, 3), dtype=np.uint8)
+
+        return self._render_tile(uuid, x, y, z, t, level, channels, gamma=1, codec='jpg')
 
     @response(200)
     def prerendered_tile(self, event, context):
         '''Render the specified tile with previously saved rendering settings'''
-
         uuid = _event_path_param(event, 'uuid')
         _validate_uuid(uuid)
         self._has_image_permission(self.user_uuid, uuid, 'Read')
@@ -500,6 +593,7 @@ class Handler:
         if tile_data is not None:
             return tile_data
 
+        self._open_session()
         rendering_settings = self.client.get_image_channel_group(channel_group_uuid)
         channels = _channels_json_to_params(rendering_settings.channels)
 
@@ -509,7 +603,6 @@ class Handler:
         return image
 
     def _render_tile(self, uuid, x, y, z, t, level, channels, gamma=None, codec='jpg'):
-        total_start = time.time()
         # Prepare for blending
         args = [(uuid, x, y, z, t,
                  channel['index'], level) for channel in channels]
@@ -522,47 +615,35 @@ class Handler:
         # didn't gain speed, it was actually a bit slower..
 
         # Fetch raw tiles in parallel
-        logger.info("Start fetching images for channel tiles from S3")
-        start = time.time()
         tile_provider = S3TileProvider(bucket.split(':')[-1],
                                        missing_tile_callback=handle_missing_tile,
                                        cache_client=redis_client_raw)
         try:
-            pool = ThreadPool(len(channels))
             images = pool.starmap(tile_provider.get_tile, args)
         finally:
-            pool.close()
+            pass
 
-        t = round((time.time() - start) * 1000)
-        logger.info("All channel tiles fetched in %s ms", t)
         # Update channel dictionary with image data
         for channel, image in zip(channels, images):
             channel['image'] = image
 
         # Blend the raw tiles
-        composite_start = time.time()
+        logging.info("Composite START")
         composite = render.composite_channels(channels, gamma=gamma)
-        composite_time = round((time.time() - composite_start) * 1000)
-        logger.info("composite_channels time: %s ms", composite_time)
-
+        logging.info("Composite END")
         # CV2 requires 0 - 255 values
-        composite *= 255
-        composite = composite.astype(np.uint8, copy=False)
 
         # Encode rendered image as JPG
-        #img = encode_jpeg(composite, quality=80, colorspace="RGB")
-
         img = BytesIO()
-        imagecodecs.imwrite(img, composite, codec=codec)
+        imagecodecs.imwrite(img, composite, codec=codec, level=85)
         img.seek(0)
 
-        total_time = round((time.time() - total_start) * 1000)
-        logger.info("Render tile (%s) L=%s X=%s Y=%s DONE, total time: %s ms", self.content_type, level, x, y, total_time)
         return img.read()
 
     @response(200)
     def render_region(self, event, context):
         from minerva_db.sql.api import Client as db_client
+        self._open_session()
         client = db_client(self.session)
 
         '''Render the specified region with the given settings'''
@@ -704,7 +785,7 @@ class Handler:
                 })
 
         # Fetch raw tiles in parallel
-        s3_tile_provider = S3TileProvider(client, bucket.split(':')[-1],
+        s3_tile_provider = S3TileProvider(bucket.split(':')[-1],
                                           missing_tile_callback=handle_missing_tile)
         try:
             pool = ThreadPool(len(args))
@@ -738,8 +819,51 @@ class Handler:
             imagecodecs.imwrite(img, scaled, codec="jpg")
         return img.read()
 
+    @response(200)
+    def get_autosettings(self, event, context):
+
+        uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(uuid)
+
+        from minerva_db.sql.api import Client as db_client
+        self._open_session()
+        client = db_client(self.session)
+
+        self._has_image_permission(self.user_uuid, uuid, 'Read')
+        image = client.get_image(uuid)
+        max_level = image["data"]["pyramid_levels"] - 1
+
+        channel_ids = event['pathParameters']['channels'].split(',')
+        method = _event_query_param(event, 'method')
+
+        tile_provider = S3TileProvider(bucket.split(':')[-1],
+                                       missing_tile_callback=handle_missing_tile,
+                                       cache_client=redis_client_raw)
+
+        args = [(uuid, channel, tile_provider, 0, 0, 0, 0, max_level, method) for channel in channel_ids]
+        res = {
+            "channels": pool.starmap(self._autosettings_channel, args)
+        }
+        return res
+
+    def _autosettings_channel(self, uuid, channel, tile_provider, x, y, z, t, level, method="histogram"):
+        data = tile_provider.get_tile(uuid, x, y, z, t, channel, level)
+        if method == "gaussian":
+            min, max = autosettings.gaussian(data, n_components=3, n_sigmas=2, subsampling=3)
+        else:
+            h, b = autosettings.calc_histogram(data)
+            min, max = autosettings.calc_min_max(h, b, 0.0005)
+
+        return {
+            "id": channel,
+            "min": min,
+            "max": max
+        }
+
 
 handler = Handler()
 render_tile = handler.render_tile
 render_region = handler.render_region
 prerendered_tile = handler.prerendered_tile
+omero_render_tile = handler.omero_render_tile
+get_autosettings = handler.get_autosettings

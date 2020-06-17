@@ -147,7 +147,6 @@ Resources:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
       Type: MANAGED
-      AllocationStrategy: BEST_FIT_PROGRESSIVE
       ComputeEnvironmentName: !Sub ${StackPrefix}-${Stage}-ec2
       ServiceRole: !GetAtt BatchServiceRole.Arn
       ComputeResources:
@@ -159,10 +158,9 @@ Resources:
         ImageId: !Ref BatchAMI
         InstanceTypes:
           - optimal
-          - t3.micro
-          - m5a.large
-          - m5a.xlarge
-          - m5a.2xlarge
+          - c5.large
+          - c5.xlarge
+          - c5.4xlarge
         SecurityGroupIds:
           - Fn::ImportValue:
               !Sub ${StackPrefix}-${Stage}-GeneralSGID
@@ -176,7 +174,6 @@ Resources:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
       Type: MANAGED
-      AllocationStrategy: BEST_FIT_PROGRESSIVE
       ComputeEnvironmentName: !Sub ${StackPrefix}-${Stage}-spot
       ServiceRole: !GetAtt BatchServiceRole.Arn
       ComputeResources:
@@ -305,10 +302,10 @@ Resources:
           - Ref::fileset_uuid
         Memory: 30000  # FIXME look into memory optimizing bfextract
         JobRoleArn: !GetAtt BatchRole.Arn
-        Vcpus: 2
-        Image: sorgerlab/bfextractor:0.0.8
+        Vcpus: 4
+        Image: sorgerlab/bfextractor:0.0.11
       RetryStrategy:
-        Attempts: 2
+        Attempts: 1
 
   # SSM
   JobQueueARN:

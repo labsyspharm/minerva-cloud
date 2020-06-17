@@ -54,7 +54,9 @@ def prepare_common_parameters(config):
 
     parameters = string_configs_to_parameters(config, [
         'VpcId',
-        'DatabasePassword'
+        'DatabasePassword',
+        'EnableRenderedCache',
+        'EnableRawCache'
     ])
 
     parameters.append(make_parameter('SubnetsPublic',

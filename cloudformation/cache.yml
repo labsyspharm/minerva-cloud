@@ -33,6 +33,7 @@ Resources:
       Engine: redis
       NumCacheNodes: 1
       Port: 6379
+      PreferredAvailabilityZone: us-east-1a
       Tags:
         - Key: project
           Value: !Ref ProjectTag
@@ -52,6 +53,7 @@ Resources:
       Engine: redis
       NumCacheNodes: 1
       Port: 6379
+      PreferredAvailabilityZone: us-east-1a
       Tags:
         - Key: project
           Value: !Ref ProjectTag
