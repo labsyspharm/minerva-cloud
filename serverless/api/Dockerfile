@@ -1,2 +1,11 @@
-FROM lambci/lambda:build-python3.7
-RUN pip install --upgrade pip
+FROM python:3.7.7-slim-buster
+
+RUN apt update
+RUN apt -y install build-essential git
+
+
+
+
+
+
+

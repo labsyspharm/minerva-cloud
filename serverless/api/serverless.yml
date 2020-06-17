@@ -12,7 +12,7 @@ provider:
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
   runtime: python3.7
-  memorySize: 3008
+  memorySize: 2048
   versionFunctions: false
   vpc:
     securityGroupIds:
@@ -69,11 +69,25 @@ functions:
             authorizerId:
               Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
 
+  omeroRenderTile:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-omeroRenderTile
+    handler: handler.omero_render_tile
+    events:
+      - http:
+          method: GET
+          cors: true
+          path: /render_image_region/{uuid}/{z}/{t}/
+          contentHandling: CONVERT_TO_BINARY
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+
+
   prerenderedTile:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prerenderedTile
     handler: handler.prerendered_tile
     memorySize: 512
-    provisionedConcurrency: 5
     events:
       - http:
           method: GET
@@ -101,6 +115,24 @@ functions:
             type: COGNITO_USER_POOLS
             authorizerId:
               Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+
+  getAutoSettings:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getAutoSettings
+    handler: handler.get_autosettings
+    memorySize: 2048
+    timeout: 10
+    events:
+      - http:
+          method: GET
+          caching:
+            enabled: false
+          cors: true
+          path: /image/{uuid}/autosettings/{channels+}
+          authorizer:
+            name: MinervaApiCustomAuthorizer
+            type: token
+            arn:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorizeFunctionArn
 
 
 plugins:
