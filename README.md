@@ -1,3 +1,5 @@
+<img width="500px" src="./Minerva-Cloud_HorizLogo_RGB.svg" />
+
 # Minerva Cloud - backend infrastructure
 
 This repository contains the templates necessary to deploy the Minerva Cloud platform.
