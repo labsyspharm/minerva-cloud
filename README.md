@@ -1,6 +1,6 @@
-# Minerva Infrastructure
+# Minerva Cloud - backend infrastructure
 
-This repository contains the templates necessary to deploy the minerva platform.
+This repository contains the templates necessary to deploy the Minerva Cloud platform.
 It is comprised of some cloudformation and serverless configurations.
 
 ## Prerequisites
