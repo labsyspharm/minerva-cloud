@@ -1,0 +1,9 @@
+{
+  "devDependencies": {
+    "serverless": "^1.66.0",
+    "serverless-apigw-binary": "^0.4.4",
+    "serverless-pseudo-parameters": "^2.1.0",
+    "serverless-python-requirements": "^5.0.1",
+    "serverless-plugin-split-stacks": "^1.9.3"
+  }
+}

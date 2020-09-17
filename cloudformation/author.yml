@@ -1,0 +1,44 @@
+# Cloudformation script for Minerva Author cloud backend
+
+Parameters:
+  StackPrefix:
+    Type: String
+    Description: Unique prefix used in related stacks for use by export
+  Stage:
+    Type: String
+    Description: Deployment stage
+  ProjectTag:
+    Type: String
+    Description: Project tag
+
+Resources:
+  StoryBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
+
+  PublishedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
+      AccessControl: PublicRead
+
+  S3BucketTileARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/author/S3BucketStoryARN
+      Description: S3 Bucket ARN for Minerva Author story data
+      Type: String
+      Value: !GetAtt StoryBucket.Arn
+
+  S3PublishedBucketTileARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/author/S3BucketPublishedARN
+      Description: S3 Bucket ARN for static published Minerva Story images and other content
+      Type: String
+      Value: !GetAtt PublishedBucket.Arn

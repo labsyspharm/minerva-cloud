@@ -84,10 +84,6 @@ def prepare_batch_parameters(config):
     return parameters
 
 
-def prepare_cognito_parameters(config):
-
-    return []
-
 def prepare_cache_parameters(config):
     return string_configs_to_parameters(config, [
         'DefaultSecurityGroup',
@@ -141,11 +137,13 @@ def main(operation, stack, config):
     if stack == 'common':
         parameters = prepare_common_parameters(config)
     elif stack == 'cognito':
-        parameters = prepare_cognito_parameters(config)
+        parameters = []
     elif stack == 'batch':
         parameters = prepare_batch_parameters(config)
     elif stack == 'cache':
         parameters = prepare_cache_parameters(config)
+    elif stack == 'author':
+        parameters = []
 
     if operation in ['create', 'update']:
         # Trigger the operation
@@ -209,6 +207,7 @@ if __name__ == '__main__':
         cognito = 'cognito'
         batch = 'batch'
         cache = 'cache'
+        author = 'author'
 
         def __str__(self):
             return self.value
