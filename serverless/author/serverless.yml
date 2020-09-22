@@ -45,6 +45,10 @@ provider:
       Resource: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/author/S3BucketPublishedARN}/*"
     - Effect: Allow
       Action:
+        - s3:GetObject
+      Resource: "${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/author/S3MinervaStoryBaseBucketARN}/*"
+    - Effect: Allow
+      Action:
         - ssm:GetParameter
         - ssm:GetParameters
       Resource: "arn:aws:ssm:#{AWS::Region}:#{AWS::AccountId}:parameter/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/*"

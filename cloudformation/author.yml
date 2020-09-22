@@ -18,6 +18,14 @@ Resources:
       Tags:
         - Key: project
           Value: !Ref ProjectTag
+    DeletionPolicy: Retain
+
+  MinervaStoryBaseBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: project
+          Value: !Ref ProjectTag
 
   PublishedBucket:
     Type: AWS::S3::Bucket
@@ -26,6 +34,28 @@ Resources:
         - Key: project
           Value: !Ref ProjectTag
       AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+    DeletionPolicy: Retain
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      PolicyDocument:
+        Id: PublishedBucketPolicy
+        Version: 2012-10-17
+        Statement:
+          - Sid: PublicReadForGetBucketObjects
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref PublishedBucket
+                - /*
+      Bucket: !Ref PublishedBucket
 
   S3BucketTileARN:
     Type: AWS::SSM::Parameter
@@ -42,3 +72,29 @@ Resources:
       Description: S3 Bucket ARN for static published Minerva Story images and other content
       Type: String
       Value: !GetAtt PublishedBucket.Arn
+
+  S3MinervaStoryBaseBucketARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/author/S3MinervaStoryBaseBucketARN
+      Description: S3 Bucket ARN for minerva-story base
+      Type: String
+      Value: !GetAtt MinervaStoryBaseBucket.Arn
+
+  URLPublishedStoryARN:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/author/URLPublishedStoryARN
+      Description: URL for the published stories
+      Type: String
+      Value: !GetAtt
+        - PublishedBucket
+        - WebsiteURL
+
+  MinervaBrowserURL:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${StackPrefix}/${Stage}/author/MinervaBrowserURL
+      Description: URL for the minerva-browser library
+      Type: String
+      Value: "https://cdn.jsdelivr.net/npm/minerva-browser@2.1.0/index.min.js"

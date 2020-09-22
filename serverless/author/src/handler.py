@@ -21,12 +21,18 @@ STAGE = os.environ['STAGE']
 ssm = boto3.client('ssm')
 s3 = boto3.client('s3')
 
-bucket_parameter = ssm.get_parameter(Name='/{}/{}/author/S3BucketStoryARN'.format(STACK_PREFIX, STAGE))
-bucket = bucket_parameter["Parameter"]["Value"].split(':')[-1]
-storage = AuthorS3Storage(bucket)
+def _get_ssm_parameter(name):
+    bucket_parameter = ssm.get_parameter(Name='/{}/{}/author/{}'.format(STACK_PREFIX, STAGE, name))
+    return bucket_parameter["Parameter"]["Value"].split(':')[-1]
 
-bucket_parameter = ssm.get_parameter(Name='/{}/{}/author/S3BucketPublishedARN'.format(STACK_PREFIX, STAGE))
-published_bucket = bucket_parameter["Parameter"]["Value"].split(':')[-1]
+
+bucket = _get_ssm_parameter("S3BucketStoryARN")
+storage = AuthorS3Storage(bucket)
+published_bucket = _get_ssm_parameter("S3BucketPublishedARN")
+minerva_story_base_bucket = _get_ssm_parameter("S3MinervaStoryBaseBucketARN")
+published_story_url = _get_ssm_parameter("URLPublishedStoryARN")
+minerva_browser_url = _get_ssm_parameter("MinervaBrowserURL")
+
 
 def json_custom(obj: Any) -> str:
     '''JSON serializer for extra types.
@@ -200,22 +206,38 @@ class Handler:
             "story_uuid": story_uuid,
             "user_uuid": self.user_uuid
         }
+
+        invocation_type = "Event"
+        dryrun = _event_query_param(event, "dryrun")
+        if dryrun is not None:
+            invocation_type = "DryRun"
+
         res = lambda_client.invoke(
-            FunctionName="minerva-test-dev-publishStoryInternal",
-            InvocationType="Event",
+            FunctionName=f"{STACK_PREFIX}-{STAGE}-publishStoryInternal",
+            InvocationType=invocation_type,
             Payload=json.dumps(payload)
         )
-        #story = storage.get_story(story_uuid)
-        #publisher = StoryPublisher(published_bucket)
-        #publisher.publish(story, self.user_uuid)
+        if res["StatusCode"] not in [200, 202, 204]:
+            raise Exception("Error in invoking publishStoryInternal")
+
+        url = f"{published_story_url}/{story_uuid}/minerva-story/index.html"
+
+        return {
+            "bucket": published_bucket,
+            "key": story_uuid,
+            "url": url
+        }
 
     def publish_story_internal(self, event, context):
         story_uuid = event["story_uuid"]
         user_uuid = event["user_uuid"]
         _validate_uuid(story_uuid)
         story = storage.get_story(story_uuid)
-        publisher = StoryPublisher(published_bucket)
-        publisher.publish(story, user_uuid)
+        publisher = StoryPublisher(published_bucket,
+                                   get_image_lambda_name=f"{STACK_PREFIX}-{STAGE}-getImageDimensions",
+                                   render_tile_lambda_name=f"{STACK_PREFIX}-{STAGE}-renderTile",
+                                   )
+        publisher.publish(story, user_uuid, minerva_story_base_bucket, minerva_browser_url)
 
     def _validate_story(self, story):
         errors = []

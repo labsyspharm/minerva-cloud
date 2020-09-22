@@ -3,22 +3,35 @@ import json
 import math
 import logging
 import base64
+import os
 from concurrent.futures import ThreadPoolExecutor
+from .storyhtml import create_story_html
+
 
 class StoryPublisher:
-    def __init__(self, bucket):
+    def __init__(self, bucket, get_image_lambda_name, render_tile_lambda_name):
         self.bucket = bucket
         self.lambda_client = boto3.client('lambda')
         self.s3_client = boto3.client('s3')
         self.executor = ThreadPoolExecutor(max_workers=20)
+        self.get_image_lambda_name = get_image_lambda_name
+        self.render_tile_lambda_name = render_tile_lambda_name
 
-    def publish(self, story, user_uuid):
-        self._create_story(story, user_uuid)
+    def publish(self, story, user_uuid, base_bucket, minerva_browser_url):
+        self._create_story(story, minerva_browser_url)
         self._render_tiles(story, user_uuid)
 
-    def _create_story(self, story, user_uuid):
-        key = story["uuid"] + "/story.json"
-        self.s3_client.put_object(Body=json.dumps(story), Bucket=self.bucket, Key=key)
+    def _create_story(self, story, minerva_browser_url):
+        story_uuid = story["uuid"]
+        story_json = json.dumps(story)
+
+        html = create_story_html(story_json, minerva_browser_url)
+
+        key = f"{story_uuid}/minerva-story/index.html"
+        self.s3_client.put_object(Body=html,
+                                  Bucket=self.bucket,
+                                  Key=key,
+                                  ContentType="text/html")
 
     def _render_tiles(self, story, user_uuid):
         image_uuid = story["imageUuid"]
@@ -27,8 +40,6 @@ class StoryPublisher:
         body = self._get_image(user_uuid, image_uuid)
         metadata = body["data"]
         image = body["included"]["images"][0]
-        print(metadata)
-        print(image)
         width = metadata["pixels"]["SizeX"]
         height = metadata["pixels"]["SizeY"]
         pyramid_levels = image["pyramid_levels"]
@@ -40,6 +51,7 @@ class StoryPublisher:
         self.executor.shutdown()
 
     def _render_group(self, group, image_uuid, width, height, pyramid_levels, tile_size, user_uuid, story):
+        sample_name = story["sample_info"]["name"]
         channels = group["channels"]
         channel_params = [f"{channel['id']},{channel['color']},{channel['min']},{channel['max']}" for channel in channels]
         channel_params = "/".join(channel_params)
@@ -58,15 +70,15 @@ class StoryPublisher:
             logging.info("Level %s", level)
             for x in range(tiles_x):
                 for y in range(tiles_y):
-                    self.executor.submit(self._render_and_upload, user_uuid, image_uuid, x, y, 0, 0, level, channel_params, story_uuid, group_key)
+                    self.executor.submit(self._render_and_upload, user_uuid, image_uuid, x, y, 0, 0, level, channel_params, story_uuid, group_key, sample_name)
 
             tiles_x = math.ceil(tiles_x / 2)
             tiles_y = math.ceil(tiles_y / 2)
 
-    def _render_and_upload(self, user_uuid, image_uuid, x, y, z, t, level, channel_params, story_uuid, group_label):
+    def _render_and_upload(self, user_uuid, image_uuid, x, y, z, t, level, channel_params, story_uuid, group_label, sample_name):
         logging.info("x=%s y=%s ", x, y)
         tile_img = self._render_tile(user_uuid, image_uuid, x, y, z, t, level, channel_params)
-        key = f"{story_uuid}/{group_label}/{level}_{x}_{y}.jpg"
+        key = f"{story_uuid}/minerva-story/images/{sample_name}/{group_label}/{level}_{x}_{y}.jpg"
         self.s3_client.put_object(Body=tile_img, Bucket=self.bucket, Key=key)
 
     def _get_image(self, user_uuid, image_uuid):
@@ -86,7 +98,7 @@ class StoryPublisher:
             }
         }
         res = self.lambda_client.invoke(
-            FunctionName="minerva-test-dev-getImageDimensions",
+            FunctionName=self.get_image_lambda_name,
             Payload=json.dumps(payload)
         )
         data = json.loads(res["Payload"].read())
@@ -117,7 +129,7 @@ class StoryPublisher:
             }
         }
         res = self.lambda_client.invoke(
-            FunctionName="minerva-test-dev-renderTile",
+            FunctionName=self.render_tile_lambda_name,
             Payload=json.dumps(payload)
         )
         data = res["Payload"].read()
