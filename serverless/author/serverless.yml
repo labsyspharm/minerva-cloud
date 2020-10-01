@@ -12,15 +12,15 @@ provider:
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
   runtime: python3.7
-  memorySize: 512
+  memorySize: 256
   versionFunctions: false
-  vpc:
-    securityGroupIds:
-      - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
-      # Default SG for SSM
-      - ${file(${opt:configfile}):DefaultSecurityGroup}
-    # Private subnets with internet routing
-    subnetIds: ${file(${opt:configfile}):SubnetsPrivate}
+#  vpc:
+#    securityGroupIds:
+#      - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
+#      # Default SG for SSM
+#      - ${file(${opt:configfile}):DefaultSecurityGroup}
+#    # Private subnets with internet routing
+#    subnetIds: ${file(${opt:configfile}):SubnetsPrivate}
   deploymentBucket:
     name: ${file(${opt:configfile}):DeploymentBucket}
   environment:
@@ -66,7 +66,7 @@ provider:
       Action:
         - lambda:InvokeFunction
         - lambda:InvokeAsync
-      Resource: "arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-publishStoryInternal"
+      Resource: "arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-publishGroupInternal"
 
 
   apiGateway:
@@ -149,9 +149,23 @@ functions:
             authorizerId:
               Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
 
-  publishStoryInternal:
-    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-publishStoryInternal
-    handler: src.handler.publish_story_internal
+  getPublishedStatus:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getPublishedStatus
+    handler: src.handler.get_published_status
+    timeout: 10
+    events:
+      - http:
+          method: GET
+          cors: true
+          path: /author/story/{uuid}/status
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+
+  publishGroupInternal:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-publishGroupInternal
+    handler: src.handler.publish_group_internal
     memorySize: 192
     timeout: 900
 

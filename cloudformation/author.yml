@@ -97,4 +97,4 @@ Resources:
       Name: !Sub /${StackPrefix}/${Stage}/author/MinervaBrowserURL
       Description: URL for the minerva-browser library
       Type: String
-      Value: "https://cdn.jsdelivr.net/npm/minerva-browser@2.1.0/index.min.js"
+      Value: "https://cdn.jsdelivr.net/npm/minerva-browser@2.10.0/build/bundle.js"
