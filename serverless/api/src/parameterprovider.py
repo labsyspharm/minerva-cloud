@@ -10,7 +10,7 @@ class SSMParameterProvider:
 
     def get_parameter(self, key):
         if self.parameters is not None:
-            return self.parameters[key]
+            return self.parameters.get(key, "")
         else:
             self.parameters = {}
             parameters_res = []
@@ -45,4 +45,4 @@ class SSMParameterProvider:
                 _value = p['Value']
                 self.parameters[_key] = _value
 
-        return self.parameters[key]
+        return self.parameters.get(key, "")

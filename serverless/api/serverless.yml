@@ -12,7 +12,7 @@ provider:
   region: ${file(${opt:configfile}):Region}
   stage: ${file(${opt:configfile}):Stage}
   runtime: python3.7
-  memorySize: 2048
+  memorySize: 1024
   versionFunctions: false
   vpc:
     securityGroupIds:
@@ -119,9 +119,9 @@ functions:
 
   getAutoSettings:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getAutoSettings
-    handler: src.autosettings.get_autosettings
+    handler: src.handler.get_autosettings
     memorySize: 2048
-    timeout: 10
+    timeout: 20
     events:
       - http:
           method: GET

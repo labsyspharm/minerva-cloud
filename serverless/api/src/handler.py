@@ -16,7 +16,6 @@ from .tileprovider import S3TileProvider
 from .parameterprovider import SSMParameterProvider
 from .lambdautils import *
 import imagecodecs
-import redis
 
 STACK_PREFIX = os.environ['STACK_PREFIX']
 STAGE = os.environ['STAGE']
@@ -39,6 +38,7 @@ enable_rendered_cache = parameter_provider.get_parameter('/{}/{}/cache/EnableRen
 redis_client = None
 if cache_host is not None and enable_rendered_cache == "1" and os.environ.get("AWS_EXECUTION_ENV") is not None:
     logging.info("Connecting to prerendered tiles Redis host: %s:%s", cache_host, cache_port)
+    import redis
     redis_client = redis.Redis(host=cache_host, port=cache_port, socket_connect_timeout=1)
 else:
     logging.info("Rendered tiles cache is disabled")
@@ -49,6 +49,7 @@ enable_raw_cache = parameter_provider.get_parameter('/{}/{}/cache/EnableRawCache
 redis_client_raw = None
 if cache_host is not None and enable_raw_cache == "1" and os.environ.get("AWS_EXECUTION_ENV") is not None:
     logging.info("Connecting to raw tiles Redis host: %s:%s", cache_host_raw, cache_port_raw)
+    import redis
     redis_client_raw = redis.Redis(host=cache_host_raw, port=cache_port_raw, socket_connect_timeout=1)
 else:
     logging.info("Raw tiles cache is disabled")
@@ -149,7 +150,7 @@ def _channels_json_to_params(channels):
 
 def _parse_omero_tile(tile):
     t = tile.split(',')
-    # level, x, y, width, height
+    # level, x, y
     return int(t[0]), int(t[1]), int(t[2])
 
 def _parse_omero_channels(c):
@@ -544,9 +545,51 @@ class Handler:
             imagecodecs.imwrite(img, scaled, codec="jpg")
         return img.read()
 
+    @response(200)
+    def get_autosettings(self, event, context):
+        uuid = event_path_param(event, 'uuid')
+        validate_uuid(uuid)
+
+        from minerva_db.sql.api import Client as db_client
+        self._open_session()
+        client = db_client(self.session)
+
+        self._has_image_permission(self.user_uuid, uuid, 'Read')
+        image = client.get_image(uuid)
+        max_level = image["data"]["pyramid_levels"] - 1
+
+        channel_ids = event['pathParameters']['channels'].split(',')
+        method = event_query_param(event, 'method')
+
+        tile_provider = S3TileProvider(bucket.split(':')[-1],
+                                       missing_tile_callback=None,
+                                       cache_client=None)
+
+        args = [(uuid, channel, tile_provider, 0, 0, 0, 0, max_level, method) for channel in channel_ids]
+        res = {
+            "channels": pool.starmap(self._autosettings_channel, args)
+        }
+        return res
+
+    def _autosettings_channel(self, uuid, channel, tile_provider, x, y, z, t, level, method="histogram"):
+        from minerva_lib import autosettings
+
+        data = tile_provider.get_tile(uuid, x, y, z, t, channel, level)
+        if method == "gaussian":
+            min, max = autosettings.gaussian(data, n_components=3, n_sigmas=2, subsampling=3)
+        else:
+            h, b = autosettings.calc_histogram(data)
+            min, max = autosettings.calc_min_max(h, b, 0.0005)
+
+        return {
+            "id": channel,
+            "min": min,
+            "max": max
+        }
 
 handler = Handler()
 render_tile = handler.render_tile
 render_region = handler.render_region
 prerendered_tile = handler.prerendered_tile
 omero_render_tile = handler.omero_render_tile
+get_autosettings = handler.get_autosettings

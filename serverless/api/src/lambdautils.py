@@ -47,9 +47,9 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
             # Execute the requested function and make a response or error
             # response
             try:
+                self.session is None
                 self.body = event_body(event)
                 self.user_uuid = event_user(event)
-                print(event)
                 self.content_type = "image/jpeg"
                 binary = True
                 if "accept" in event["headers"]:
