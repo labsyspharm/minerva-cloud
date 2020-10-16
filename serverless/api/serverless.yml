@@ -57,7 +57,8 @@ functions:
 
   renderTile:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-renderTile
-    handler: handler.render_tile
+    handler: src.handler.render_tile
+    memorySize: 1024
     events:
       - http:
           method: GET
@@ -71,7 +72,7 @@ functions:
 
   omeroRenderTile:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-omeroRenderTile
-    handler: handler.omero_render_tile
+    handler: src.handler.omero_render_tile
     events:
       - http:
           method: GET
@@ -86,8 +87,8 @@ functions:
 
   prerenderedTile:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-prerenderedTile
-    handler: handler.prerendered_tile
-    memorySize: 512
+    handler: src.handler.prerendered_tile
+    memorySize: 1024
     events:
       - http:
           method: GET
@@ -102,7 +103,7 @@ functions:
 
   renderRegion:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-renderRegion
-    handler: handler.render_region
+    handler: src.handler.render_region
     events:
       - http:
           method: GET
@@ -118,7 +119,7 @@ functions:
 
   getAutoSettings:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getAutoSettings
-    handler: handler.get_autosettings
+    handler: src.autosettings.get_autosettings
     memorySize: 2048
     timeout: 10
     events:
@@ -148,6 +149,9 @@ custom:
       - "image/webp"
 
   pythonRequirements:
+    pipCmdExtraArgs:
+      - --compile
+      - --global-option=build_ext
     useDownloadCache: false
     useStaticCache: false
     dockerizePip: non-linux
