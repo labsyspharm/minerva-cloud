@@ -182,7 +182,13 @@ class Handler:
         _validate_uuid(story_uuid)
         old_story = storage.get_story(story_uuid)
         story["last_updated"] = datetime.datetime.now().isoformat()
-        story["author_uuid"] = old_story["author_uuid"]
+        if "author_uuid" not in old_story:
+            story["author_uuid"] = self.user_uuid
+        elif self.user_uuid not in old_story.get("author_uuid", ""):
+            story["author_uuid"] = ",".join([old_story["author_uuid"], story["author_uuid"]])
+        else:
+            story["author_uuid"] = old_story.get("author_uuid", self.user_uuid)
+
         storage.save_story(json.dumps(story), story_uuid)
         return story
 
@@ -197,7 +203,7 @@ class Handler:
     def list_stories(self, event, context):
         stories = storage.list_stories()
         own_stories = {
-            "stories": [story for story in stories["stories"] if story["author_uuid"] == self.user_uuid]
+            "stories": [story for story in stories["stories"] if self.user_uuid in story["author_uuid"]]
         }
         return own_stories
 
@@ -256,6 +262,7 @@ class Handler:
             error_message = ", ".join(errors)
             error_message = "Invalid story: " + error_message
             raise ValueError(error_message)
+
 
 handler = Handler()
 save_story = handler.save_story
