@@ -3,10 +3,11 @@
 # Minerva Cloud - backend infrastructure
 
 This repository contains the templates necessary to deploy the Minerva Cloud platform.
-It is comprised of some cloudformation and serverless configurations.
+It is comprised of some CloudFormation and serverless configurations.
 
 ## Prerequisites
-- A VPC in the desired region.
+These need to be created manually in AWS console
+- A VPC in the desired AWS region.
 - A pair of public subnets in the VPC.
 - A pair of private subnets with NAT gateways configured in the VPC.
 - A default security group which allows communication in/out from itself.
@@ -18,53 +19,17 @@ It is comprised of some cloudformation and serverless configurations.
 
 If you need to use a different aws profile from the default one, to be able to access aws resources,
 this can be setup with:
-- export AWS_PROFILE=<profile name>
+- export AWS_PROFILE=profile_name
 
 ## Configuration File
 
-```YAML
-Region: us-east-1
-StackPrefix: minerva-test
-Stage: dev
-ProjectTag: myproject
-# Bucket that serverless will use as a staging area for deployment
-DeploymentBucket: bucket-name
-# VPC ID
-VpcId: vpc-12345678
-# ECS optimised AMI upon which to build the BatchAMI. This is region specific
-# and updated periodically by Amazon
-# https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
-BaseAMI: ami-644a431b
-# EFS Volume specific AMI (built on ECS optimized AMI) to use for Batch
-BatchAMI: ami-12345678
-# SSH Key Name to use for any instances
-SSHKeyName: ec2_ssh_id
-# SSH Security Group to use for an instances
-DefaultSecurityGroup: sg-12345678
-# SSH Security Group to use for an instances
-SSHSecurityGroup: sg-87654321
-# Use existing subnets
-SubnetsPublic:
-  - subnet-12345678
-  - subnet-23456789
-SubnetsPrivate:
-  - subnet-34567890
-  - subnet-45678901
-# Batch compute environments
-BatchClusterEC2MinCpus: 0
-BatchClusterEC2MaxCpus: 4
-BatchClusterEC2DesiredCpus: 0
-BatchClusterSpotMinCpus: 0
-BatchClusterSpotMaxCpus: 16
-BatchClusterSpotDesiredCpus: 0
-BatchClusterSpotBidPercentage: 50
-# Database password
-DatabasePassword: password
-```
+There is an example configuration file included in the repository: minerva-config.example.yml
 
 ## Instructions
 
 You can later update the stacks by replacing word "create" with "update"
+Instructions below presume you have the configuration file in a folder named minerva-configs,
+which is a sibling to the minerva-cloud project root directory.
 
 1. Deploy the common cloudformation infrastructure
 
@@ -122,6 +87,13 @@ cd serverless/api
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
-9. Run AWS lambda `initdb` method to initialise the database
+9. Deploy the author serverless infrastructure
 
-10. Create some users using the AWS Cognito console
+```bash
+cd serverless/author
+serverless deploy --configfile ../../../minerva-configs/test/config.yml
+```
+
+10. Run AWS lambda `initdb` method to initialise the database
+
+11. Create some users using the AWS Cognito console
