@@ -50,7 +50,6 @@ keys_url = 'https://cognito-idp.{}.amazonaws.com/{}/.well-known/jwks.json'.forma
 with urllib.request.urlopen(keys_url) as f:
     response = f.read()
 keys = json.loads(response.decode('utf-8'))['keys']
-print(keys)
 
 def decode(token):
     bearer_prefix = "Bearer "
@@ -77,7 +76,6 @@ def decode(token):
     # verify the signature
     if not public_key.verify(message.encode("utf8"), decoded_signature):
         raise ValueError('Signature verification failed')
-    print('Signature successfully verified')
     # since we passed the verification, we can now safely
     # use the unverified claims
     claims = jwt.get_unverified_claims(token)
@@ -89,7 +87,6 @@ def decode(token):
     #    print('Token was not issued for this audience')
     #    return False
     # now we can use the claims
-    print(claims)
     return claims
 
 

@@ -12,13 +12,6 @@ provider:
   stage: ${file(${opt:configfile}):Stage}
   runtime: python3.7
   memorySize: 128
-  vpc:
-    securityGroupIds:
-      - ${ssm:/${self:provider.environment.STACK_PREFIX}/${self:provider.environment.STAGE}/common/GeneralSGID}
-      # Default SG for SSM
-      - ${file(${opt:configfile}):DefaultSecurityGroup}
-    # Private subnets with internet routing
-    subnetIds: ${file(${opt:configfile}):SubnetsPrivate}
   deploymentBucket:
     name: ${file(${opt:configfile}):DeploymentBucket}
   environment:
@@ -35,7 +28,6 @@ functions:
   authorize:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-authorize
     handler: authorizer.authorize_request
-    provisionedConcurrency: 5
 
 resources:
   Outputs:
