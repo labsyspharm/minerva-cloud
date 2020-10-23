@@ -37,6 +37,7 @@ Resources:
           RequireNumbers: True
           RequireSymbols: False
           RequireUppercase: True
+          TemporaryPasswordValidityDays: 30
       Schema:
         - Name: name
           AttributeDataType: String
@@ -60,6 +61,9 @@ Resources:
     Type: AWS::Cognito::UserPoolClient
     Properties:
         ClientName: web-client
+        IdTokenValidity: 600
+        RefreshTokenValidity: 365
+        AccessTokenValidity: 600
         ReadAttributes:
           - address
           - birthdate
