@@ -1,3 +1,4 @@
+import base64
 from typing import Any, Callable, Dict, List, Union, Optional
 from functools import wraps
 import os
@@ -161,25 +162,33 @@ def json_custom(obj: Any) -> str:
     raise TypeError('Type {} not serializable'.format(type(obj)))
 
 
-def make_response(code: int, body: Union[Dict, List]) -> Dict[str, Any]:
+def make_response(code: int, body: Union[Dict, List], content_type="application/json") -> Dict[str, Any]:
     '''Build a response.
 
         Args:
             code: HTTP response code.
             body: Python dictionary or list to jsonify.
+            content_type: HTTP response Content-Type header
 
         Returns:
             Response object compatible with AWS Lambda Proxy Integration
     '''
+    if content_type == "application/json":
+        body = json.dumps(body, default=json_custom)
+        binary = False
+    else:
+        body = base64.b64encode(body).decode('utf-8')
+        binary = True
 
     return {
         'statusCode': code,
         'headers': {
-            'Content-Type': 'application/json',
+            'Content-Type': content_type,
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Credentials': 'true'
         },
-        'body': json.dumps(body, default=json_custom)
+        'body': body,
+        'isBase64Encoded': binary
     }
 
 
@@ -196,7 +205,7 @@ def make_response(code: int, body: Union[Dict, List]) -> Dict[str, Any]:
 #     return wrapper
 
 # TODO Refactor this as it is in multiple handlers
-def response(code: int) -> Callable[..., Dict[str, Any]]:
+def response(code: int, content_type="application/json") -> Callable[..., Dict[str, Any]]:
     '''Decorator for turning exceptions into responses.
 
     KeyErrors are assumed to be missing parameters (either query or path) and
@@ -230,7 +239,7 @@ def response(code: int) -> Callable[..., Dict[str, Any]]:
             try:
                 self.body = _event_body(event)
                 self.user_uuid = _event_user(event)
-                return make_response(code, fn(self, event, context))
+                return make_response(code, fn(self, event, context), content_type)
             except KeyError as e:
                 logger.exception('Client error')
                 return make_response(400, {'error': str(e)})
@@ -608,41 +617,31 @@ class Handler:
 
         return self.client.get_fileset(uuid)
 
-    # @response(200)
-    # def get_fileset_metadata(self, event, context):
-    #     uuid = _event_path_param(event, 'uuid')
-    #     _validate_uuid(uuid)
-    #     self._has_permission(self.user_uuid, 'Fileset', uuid, 'Read')
-    #
-    #     bucket = tile_bucket.split(':')[-1]
-    #
-    #     # TODO More specific query?
-    #     image_details = client.describe_image(uuid)
-    #
-    #     obj = boto3.resource('s3').Object(bucket,
-    #                                       f'{uuid}/metadata.xml')
-    #     body = obj.get()['Body']
-    #     data = body.read()
-    #     stream = BytesIO(data)
-    #     root = ET.fromstring(stream.getvalue().decode('UTF-8'))
-    #
-    #     image = root.find('ome:Image[@ID="Image:{}"]'.format(uuid),
-    #                       {'ome': OME_NS})
-    #     pixels = image.find('ome:Pixels', {'ome': OME_NS})
-    #     channels = pixels.findall('ome:Channel', {'ome': OME_NS})
-    #
-    #     return {
-    #         'pixels': {
-    #             'SizeC': int(pixels.attrib['SizeC']),
-    #             'SizeT': int(pixels.attrib['SizeT']),
-    #             'SizeX': int(pixels.attrib['SizeX']),
-    #             'SizeY': int(pixels.attrib['SizeY']),
-    #             'SizeZ': int(pixels.attrib['SizeZ']),
-    #             'channels': [{
-    #                 'ID': channel.attrib['ID'],
-    #                 'Name': channel.attrib['Name']} for channel in channels]
-    #         }
-    #     }
+    @response(200, "application/xml")
+    def get_image_metadata(self, event, context):
+        uuid = _event_path_param(event, 'uuid')
+        _validate_uuid(uuid)
+        self._has_permission(self.user_uuid, 'Image', uuid, 'Read')
+
+        bucket = self.tile_bucket.split(':')[-1]
+
+        image = self.client.get_image(uuid)
+        bucket_key = uuid
+        fileset_uuid = image['data']['fileset_uuid']
+        if fileset_uuid is not None:
+            bucket_key = fileset_uuid
+            fileset = self.client.get_fileset(fileset_uuid)
+
+            if fileset['data']['complete'] is not True:
+                raise ValueError(
+                    f'Fileset has not had metadata extracted yet: {fileset_uuid}'
+                )
+
+        obj = boto3.resource('s3').Object(bucket,
+                                          f'{bucket_key}/metadata.xml')
+        body = obj.get()['Body']
+        data = body.read()
+        return data
 
     @response(200)
     def get_image(self, event, context):
@@ -928,46 +927,6 @@ class Handler:
     #     _user_member(user, group)
     #     return client.list_users_in_group(group)
     #
-    # @response(200)
-    # def get_image_metadata(self, event, context):
-    #     user = _event_user(event)
-    #     uuid = _event_path_param(event, 'uuid')
-    #     _validate_uuid(uuid)
-    #     _user_permission(user, uuid, 'Read')
-    #
-    #     bucket = tile_bucket.split(':')[-1]
-    #
-    #     # TODO More specific query?
-    #     image_details = client.describe_image(uuid)
-    #
-    #     obj = boto3.resource('s3').Object(
-    #         bucket,
-    #         image_details['fileset'] + '/metadata.xml'
-    #     )
-    #     body = obj.get()['Body']
-    #     data = body.read()
-    #     stream = BytesIO(data)
-    #     root = ET.fromstring(stream.getvalue().decode('UTF-8'))
-    #
-    #     image = root.find('ome:Image[@ID="Image:{}"]'.format(uuid),
-    #                       {'ome': OME_NS})
-    #     pixels = image.find('ome:Pixels', {'ome': OME_NS})
-    #     channels = pixels.findall('ome:Channel', {'ome': OME_NS})
-    #
-    #     return {
-    #         'pixels': {
-    #             'SizeC': int(pixels.attrib['SizeC']),
-    #             'SizeT': int(pixels.attrib['SizeT']),
-    #             'SizeX': int(pixels.attrib['SizeX']),
-    #             'SizeY': int(pixels.attrib['SizeY']),
-    #             'SizeZ': int(pixels.attrib['SizeZ']),
-    #             'channels': [{
-    #                 'ID': channel.attrib['ID'],
-    #                 'Name': channel.attrib['Name']} for channel in channels]
-    #         }
-    #     }
-    #
-
 
 
 handler = Handler()
@@ -989,6 +948,7 @@ get_fileset = handler.get_fileset
 get_image = handler.get_image
 get_image_dimensions = handler.get_image_dimensions
 get_image_credentials = handler.get_image_credentials
+get_image_metadata = handler.get_image_metadata
 list_imports_in_repository = handler.list_imports_in_repository
 list_filesets_in_import = handler.list_filesets_in_import
 list_keys_in_import = handler.list_keys_in_import

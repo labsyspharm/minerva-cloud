@@ -560,17 +560,19 @@ functions:
   #           arn: arn:aws:cognito-idp:us-east-1:292075781285:userpool/us-east-1_d9h9zgWpx
   #
   #
-  # get_image_metadata:
-  #   handler: handler.get_image_metadata
-  #   events:
-  #     - http:
-  #         method: GET
-  #         cors: true
-  #         path: /image/{uuid}/metadata
-  #         authorizer:
-  #           # TODO Read from SSM
-  #           arn: arn:aws:cognito-idp:us-east-1:292075781285:userpool/us-east-1_d9h9zgWpx
-  #
+  getImageMetadata:
+     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-getImageMetadata
+     handler: handler.get_image_metadata
+     events:
+       - http:
+           method: GET
+           cors: true
+           path: /image/{uuid}/metadata
+           authorizer:
+             type: COGNITO_USER_POOLS
+             authorizerId:
+               Ref: ApiGatewayAuthorizer
+
   # # TODO Use /grant and all query parameters?
   # # Or /grant/{resource}/{grantee}?
   grantResourceToUser:
@@ -665,15 +667,16 @@ plugins:
 custom:
 
   pythonRequirements:
-    useDownloadCache: false
+    useDownloadCache: true
     useStaticCache: false
-    invalidateCaches: true
+    invalidateCaches: false
     dockerizePip: non-linux
 
   apigwBinary:
     types:
       - "image/png"
       - "image/jpeg"
+      - "application/xml"
 
   splitStacks:
     nestedStackCount: 5
