@@ -5,6 +5,10 @@
 This repository contains the templates necessary to deploy the Minerva Cloud platform.
 It is comprised of some CloudFormation and serverless configurations.
 
+## API Documentation
+
+[Minerva API](https://labsyspharm.github.io/minerva-cloud/)
+
 ## Prerequisites
 These need to be created manually in AWS console
 - A VPC in the desired AWS region.
