@@ -20,7 +20,8 @@ Render a tile from an image.
 | t           | Time, integer (use 0 for single images)
 | level       | Pyramid level (0=highest detail)
 | channels    | Channel rendering settings, see the details below.
-|             |
+
+<br/>
 
 #### Channel rendering settings
 

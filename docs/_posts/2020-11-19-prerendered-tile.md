@@ -23,7 +23,8 @@ This allows caching frequently used tiles and rendering settings.
 | t           | Time, integer (use 0 for single images)
 | level       | Pyramid level (0=highest detail)
 | rs_uuid    | Rendering settings uuid
-|             |
+
+<br/>
 
 ### Response
 

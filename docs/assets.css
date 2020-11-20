@@ -396,6 +396,24 @@ table {
     border-spacing: 0;
 }
 
+td, th {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+
+th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  text-align: left;
+  background-color: #4CAF50;
+  color: white;
+}
+
+tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+tr:hover {background-color: #ddd;}
 
 
 /* GENERAL */
@@ -641,4 +659,13 @@ code {
   display: block;
   padding: 15px;
   white-space: pre;
+}
+
+.copyright {
+  margin-top: 20px;
+  margin-left: 20px;
+}
+
+.copyright-about {
+  margin-bottom: 15px !important;
 }

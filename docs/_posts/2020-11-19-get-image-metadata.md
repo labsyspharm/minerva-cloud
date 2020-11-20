@@ -14,7 +14,8 @@ Get image OME metadata as OME-XML.
 | Parameter   | Description
 | :----------- | :------------
 | uuid        | Image uuid
-|             |
+
+<br/>
 
 ### Response
 
