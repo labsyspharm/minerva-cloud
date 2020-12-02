@@ -3,6 +3,7 @@ import os
 import base64
 import json
 import logging
+import sys
 import time
 
 import boto3
@@ -10,17 +11,18 @@ import boto3
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
 logging.getLogger().setLevel(logging.INFO)
 
-os.environ['STACK_PREFIX'] = 'minerva-juha'
+os.environ['STACK_PREFIX'] = 'minerva-test'
 os.environ['STAGE'] = 'dev'
 os.environ['AWS_REGION'] = 'us-east-1'
 
 logging.info("Start api_handler imports")
-from api.handler import handler as api_handler
+from api.src.handler import handler as api_handler
 logging.info("End api_handler imports")
 logging.info("Start db_handler imports")
 from db.handler import handler as db_handler
 logging.info("End db_handler imports")
-from db.internal import _init_db as init_db
+#from db.internal import _init_db as init_db
+#from auth.authorizer import handler as auth_handler
 
 from lambda_helpers import EventBuilder
 
@@ -38,6 +40,9 @@ def prerendered_tile(image_uuid, level, x, y, channel_group):
     event = EventBuilder().path_parameters(parameters).build()
 
     res = api_handler.prerendered_tile(event, None)
+    if res['statusCode'] != 200:
+        print(res)
+
     img_base64 = res["body"]
     img = base64.b64decode(img_base64)
 
@@ -46,6 +51,42 @@ def prerendered_tile(image_uuid, level, x, y, channel_group):
     with open(filename, 'wb') as f:
         f.write(img)
 
+def histogram(uuid, channels="4,5,6,7", method="histogram"):
+    parameters = {
+        "uuid": uuid,
+        "channels": channels
+    }
+    q = {
+        "method": method
+    }
+    event = EventBuilder().path_parameters(parameters).query_parameters(q).build()
+    event["headers"]["accept"] = "application/json"
+    res = api_handler.get_histogram(event, None)
+    print(res)
+
+def raw_tile(uuid, x=0, y=0, level=0, channel=0):
+    parameters = {
+        "uuid": uuid,
+        "x": x,
+        "y": y,
+        "z": 0,
+        "t": 0,
+        "level": level,
+        "channels": channel
+    }
+    event = EventBuilder().path_parameters(parameters).build()
+    res = api_handler.raw_tile(event, None)
+    if res['statusCode'] != 200:
+        print(res)
+
+    img_base64 = res["body"]
+    img = base64.b64decode(img_base64)
+
+    filename = "{}-C{}-T0-Z0-L{}-Y{}-X{}.png".format(uuid, channel, level, y, x)
+
+    filename = os.path.join('images', filename)
+    with open(filename, 'wb') as f:
+        f.write(img)
 
 def render_tile(uuid, x=0, y=0, level=0, channels="0,FFFFFF,0,1", filename=None):
     parameters = {
@@ -57,14 +98,45 @@ def render_tile(uuid, x=0, y=0, level=0, channels="0,FFFFFF,0,1", filename=None)
         "level": level,
         "channels": channels
     }
-    event = EventBuilder().path_parameters(parameters).build()
+    query_params = {
+        "gamma": 1
+    }
+    event = EventBuilder().path_parameters(parameters).query_parameters(query_params).build()
     res = api_handler.render_tile(event, None)
+    if res['statusCode'] != 200:
+        print(res)
     img_base64 = res["body"]
     img = base64.b64decode(img_base64)
 
     channel = channels.split(',')[0]
     if filename is None:
-        filename = "C{}-T0-Z0-L{}-Y{}-X{}.jpg".format(channel, level, y, x)
+        filename = "{}-C{}-T0-Z0-L{}-Y{}-X{}.jpg".format(uuid, channel, level, y, x)
+
+    filename = os.path.join('images', filename)
+    print("Writing tile: ", filename)
+    with open(filename, 'wb') as f:
+        f.write(img)
+
+def omero_render_tile(uuid, x=0, y=0, level=0, c="1|0:65535$FF0000", filename=None):
+    parameters = {
+        "uuid": uuid,
+        "z": 0,
+        "t": 0
+    }
+    query_params = {
+        "c": c,
+        "tile": "{},{},{},1024,1024".format(level, x, y)
+    }
+    event = EventBuilder().path_parameters(parameters).query_parameters(query_params).build()
+    res = api_handler.omero_render_tile(event, None)
+    if res['statusCode'] != 200:
+        print(res)
+    img_base64 = res["body"]
+    img = base64.b64decode(img_base64)
+
+    if filename is None:
+        filename = "OMERO-C_-T0-Z0-L{}-Y{}-X{}.jpg".format(level, y, x)
+
     with open(filename, 'wb') as f:
         f.write(img)
 
@@ -147,7 +219,11 @@ def create_image(name, pyramid_levels, repository_uuid):
     body = {
         "name": name,
         "pyramid_levels": pyramid_levels,
-        "repository_uuid": repository_uuid
+        "repository_uuid": repository_uuid,
+        "format": "tiff",
+        "compression": "zstd",
+        "tile_size": 1024,
+        "rgb": False
     }
     body_json = json.dumps(body)
     event = EventBuilder().body(body_json).build()
@@ -193,6 +269,21 @@ def grant_repository_to_user(repository_uuid, user_uuid):
 def update_repository(uuid, data):
     event = EventBuilder().path_parameters({"uuid": uuid}).body(data).build()
     res = db_handler.update_repository(event, None)
+    print(res)
+
+def mark_import_finished(import_uuid):
+    body = {
+        "complete": True
+    }
+    event = EventBuilder().path_parameters({"uuid": import_uuid}).body(body).build()
+    db_handler.update_import(event, None)
+
+def get_metadata(image_uuid):
+    parameters = {
+        "uuid": image_uuid
+    }
+    event = EventBuilder().path_parameters(parameters).build()
+    res = db_handler.get_image_metadata(event, None)
     print(res)
 
 def create_metadata(image_uuid):
@@ -320,8 +411,8 @@ def create_metadata(image_uuid):
     print(res)
 
 #list_images_in_repository("48001701-d606-4fc8-b3fd-51dcf64296ef")
-#create_image("Testi", 3, "48001701-d606-4fc8-b3fd-51dcf64296ef")
-#get_image("4b7274d1-44de-4bda-989d-9ed48d24c1ac")
+create_image("Testi", 3, "8778bc8b-605d-499b-a9d9-97cc3f8d55e9")
+#get_image("9a45c19a-3292-4eee-a848-5282657ae5d7")
 
 #res = get_image_credentials("aec99d4d-e259-4ae8-a3b5-923ad7beed27")
 #print(res)
@@ -332,12 +423,32 @@ def create_metadata(image_uuid):
 #render_tile("540fa7e9-2579-4496-84a7-9f525552d502z", x=2, y=1, level=1, channels="12,0000FF,0.30518044,1")
 #render_tile("540fa7e9-2579-4496-84a7-9f525552d502", x=2, y=1, level=1, channels="17,00FF00,0.045777066,0.534065766")
 #render_tile("540fa7e9-2579-4496-84a7-9f525552d502", x=2, y=1, level=1, channels="13,FF0000,0.061036088,0.228885328")
-#render_tile("540fa7e9-2579-4496-84a7-9f525552d502", x=2, y=1, level=1, channels="18,FFFFFF,0.061036088,0.534065766")
+#render_tile("a86af320-ea86-4d81-8608-3fb4519b251c", x=0, y=0, level=0, channels="0,FF0000,0.001036088,0.994065766")
 
+#from line_profiler import LineProfiler
+#profile = LineProfiler()
+#from minerva_lib import render
+#profile.add_function(render.composite_channel)
+
+#histogram("ba9eb627-c7e0-429c-a126-108d85a3f02f", "0,18,35", method="histogram")
+#histogram("0dd7f3c2-8719-419a-86ed-3be20c89de5b", "0,6,10,11", method="gaussian")
+#render_tile("deff258c-efa3-4843-9e0b-cdde2918d3e6", x=1, y=5, level=0, channels="4,ffffff,0.01,1/5,ff0000,0.01,0.33/6,00ff00,0.01,0.33/7,0000ff,0.01,0.33")
+# Request URL: https://nldzj7hd69.execute-api.us-east-1.amazonaws.com/dev/image/deff258c-efa3-4843-9e0b-cdde2918d3e6/render-tile/1/5/0/0/0/4,ffffff,0.01,1/5,ff0000,0.01,0.33/6,00ff00,0.01,0.33/7,0000ff,0.01,0.33?gamma=1
+
+#render_tile("b4727bc6-89c3-4398-b6d9-057fa4d9ed3a", x=5, y=5, level=1, channels="0,FF0000,0,1/1,00FF00,0,1/2,0000FF,0,1")
+#omero_render_tile("5063c599-aad7-42fe-a2c9-15870a0440da", x=0, y=0, level=5, c="1|0:65535$FF0000,2|0:65535$00FF00,3|0:65535$0000FF,-4|0:65535$FF0000,-5|0:65535$00FF00,-6|0:65535$0000FF,-7|0:65535$FF0000,-8|0:65535$00FF00,-9|0:65535$0000FF,-10|0:65535$FF0000,-11|0:65535$00FF00,-12|0:65535$0000FF,-13|0:65535$FF0000,-14|0:65535$00FF00,-15|0:65535$0000FF,-16|0:65535$FF0000,-17|0:65535$00FF00,-18|0:65535$0000FF,-19|0:65535$FF0000,-20|0:65535$00FF00,-21|0:65535$0000FF,-22|0:65535$FF0000,-23|0:65535$00FF00,-24|0:65535$0000FF,-25|0:65535$FF0000,-26|0:65535$00FF00,-27|0:65535$0000FF,-28|0:65535$FF0000,-29|0:65535$00FF00,-30|0:65535$0000FF,-31|0:65535$FF0000,-32|0:65535$00FF00,-33|0:65535$0000FF,-34|0:65535$FF0000,-35|0:65535$00FF00,-36|0:65535$0000FF")
+#omero_render_tile("5063c599-aad7-42fe-a2c9-15870a0440da", x=11, y=5, level=0, c="-1|3000:45000$0000FF,-2|3000:30000$00FF00,-3|3000:30000$FFFFFF,-4|3000:30000$FF0000,-5|3000:30000$0000FF,-6|4000:40000$00FF00,-7|3000:30000$FFFFFF,-8|5000:40000$FF0000,-9|3000:45000$0000FF,-10|3000:30000$00FF00,-11|3000:30000$FFFFFF,-12|4000:45000$FF0000,-13|3000:40000$0000FF,-14|3000:30000$00FF00,-15|1500:10000$FFFFFF,-16|3000:45000$FF0000,-17|3000:45000$0000FF,-18|3000:30000$00FF00,-19|3000:30000$FFFFFF,-20|2500:10000$FF0000,21|3000:45000$0000FF,22|3000:30000$00FF00,23|0:65535$FFFFFF,24|0:65535$FF0000,-25|0:65535$0000FF,-26|0:65535$00FF00,-27|0:65535$FFFFFF,-28|0:65535$FF0000,-29|0:65535$0000FF,-30|0:65535$00FF00,-31|0:65535$FFFFFF,-32|0:65535$FF0000,-33|0:65535$0000FF,-34|0:65535$00FF00,-35|0:65535$FFFFFF,-36|0:65535$FF0000")
+
+#render_tile("fedf8ea0-96bf-47d6-88ed-16275d4dadc9", x=0, y=0, level=4, channels="0,FF0000,0,1/1,0000FF,0,1")
+
+#render_tile("fedf8ea0-96bf-47d6-88ed-16275d4dadc9", x=1, y=1, level=0, channels="0,FF0000,0,0.000001")
+
+#profile.dump_stats("profile.lprof")
 #render_tile("540fa7e9-2579-4496-84a7-9f525552d502", x=2, y=1, level=1, channels="12,0000FF,0.30518044,1/17,00FF00,0.045777066,0.534065766/13,FF0000,0.061036088,0.228885328/18,FFFFFF,0.061036088,0.534065766", filename="tile_blended.jpg")
 
 #create_metadata("aec99d4d-e259-4ae8-a3b5-923ad7beed27")
-prerendered_tile("aec99d4d-e259-4ae8-a3b5-923ad7beed27", 4, 0, 0, "12c99d4d-e259-4ae8-a3b5-923ad7beed00")
+#prerendered_tile("9a45c19a-3292-4eee-a848-5282657ae5d7", 1, 4, 2, "0073d26e-df25-4b58-b3bf-41e6085121f1")
+#get_metadata("dfd24119-393f-4ad8-a4dd-e99ee159ae37")
 
 #res = db_handler.delete_repository(EventBuilder().path_parameters({ "uuid": "48001701-d606-4fc8-b3fd-51dcf64296ef"}).build(), None)
 #print(res)
@@ -359,7 +470,7 @@ prerendered_tile("aec99d4d-e259-4ae8-a3b5-923ad7beed27", 4, 0, 0, "12c99d4d-e259
 # auth_handler.authorize_request(event, None)
 
 #event = {
-#     'authorizationToken': 'Bearer Anonymouszz',
+#     'authorizationToken': 'Bearer eyJraWQiOiJYT0E0b01xV1RsMzFBbGRMQUh3UXNzREoyWEg5ZnFlU015MVJaVXdSb2dvPSIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJiYjA4N2RjNi0wNTA2LTRjOTYtYjFiZS0wMDdiZDc0ZDk0NWYiLCJhdWQiOiI2Y3RzbmpqZ2xtdG5hMnE1Zmd0cmp1ZzQ3ayIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJ0b2tlbl91c2UiOiJpZCIsImF1dGhfdGltZSI6MTU4ODAxNzQyNiwiaXNzIjoiaHR0cHM6XC9cL2NvZ25pdG8taWRwLnVzLWVhc3QtMS5hbWF6b25hd3MuY29tXC91cy1lYXN0LTFfWXVURjlTVDRKIiwibmFtZSI6Imp1aGFfcnVva29uZW5AaG1zLmhhcnZhcmQuZWR1IiwiY29nbml0bzp1c2VybmFtZSI6ImJiMDg3ZGM2LTA1MDYtNGM5Ni1iMWJlLTAwN2JkNzRkOTQ1ZiIsInByZWZlcnJlZF91c2VybmFtZSI6Imp1aGFfcnVva29uZW5AaG1zLmhhcnZhcmQuZWR1IiwiZXhwIjoxNTg4MTY1NTcxLCJpYXQiOjE1ODgxNjE5NzEsImVtYWlsIjoianVoYV9ydW9rb25lbkBobXMuaGFydmFyZC5lZHUifQ.jl_ewfVyCem-7tQUGLsgQ_YLIMSQ07ojv8-Tq-dBQlIr_UKiIl7Hbj0cj54H1zsVTZicQm1YPCpwk_VqbIzpQGMRU2S4rmDjbkYgH-yVIBvlk8n2PLjl9FV4eFCzvhaZ4wDAMSuP7-6mtTOYjAYuGwWb_f7ejVni5EdrUEfi0qhn7Y-qtBixxU_SJ2bEJEtNWpdeGKbbBmXCW46R8cbXFinPxvztOSLOy5vLoA4AX18IvfmwdoDUIWiUrOaVckItJvKOOecVV6nPGtqKAXzipLzGOW8B130AySbeNaJ8HH6JqiMR705LI_jfuUfn41lqArzHqzq9wGy8dXkhhP8Cqg',
 #     'methodArn': 'arn:aws:execute-api:us-east-1:292075781285:3v21j4dh1d/dev/GET/authtest'
 # }
 
@@ -368,3 +479,7 @@ prerendered_tile("aec99d4d-e259-4ae8-a3b5-923ad7beed27", 4, 0, 0, "12c99d4d-e259
 #init_db('postgresql', 'minerva_test', 'minerva_test', 'localhost', 5432, 'minerva_test')
 
 #update_repository("5611b0c8-b565-4e08-9e8a-b1b27c974d12", {"raw_storage": "Destroy", "access": "Private"})
+
+#mark_import_finished("d8702810-5f2a-4d17-a899-37ad42eb3bce")
+
+#raw_tile("a86af320-ea86-4d81-8608-3fb4519b251c")

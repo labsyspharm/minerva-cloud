@@ -444,9 +444,13 @@ class Handler:
         name = self.body['name']
         repository_uuid = self.body['repository_uuid']
         pyramid_levels = self.body['pyramid_levels']
+        compression = self.body.get('compression')
+        format = self.body['format']
+        tile_size = self.body['tile_size']
+        rgb = self.body.get('rgb')
         _validate_name(name)
         uuid = str(uuid4())
-        return self.client.create_image(uuid, name, pyramid_levels, fileset_uuid=None, repository_uuid=repository_uuid)
+        return self.client.create_image(uuid, name, pyramid_levels, format, compression, tile_size, rgb, fileset_uuid=None, repository_uuid=repository_uuid)
 
     @response(201)
     def create_import(self, event, context):
