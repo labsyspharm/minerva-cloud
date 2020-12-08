@@ -1,6 +1,6 @@
 import logging
 
-logger = logging.getLogger()
+logger = logging.getLogger("minerva")
 logger.setLevel(logging.INFO)
 
 import os
@@ -37,22 +37,22 @@ cache_port = parameter_provider.get_parameter('/{}/{}/cache/ElastiCachePort'.for
 enable_rendered_cache = parameter_provider.get_parameter('/{}/{}/cache/EnableRenderedCache'.format(STACK_PREFIX, STAGE))
 redis_client = None
 if cache_host is not None and enable_rendered_cache == "1" and os.environ.get("AWS_EXECUTION_ENV") is not None:
-    logging.info("Connecting to prerendered tiles Redis host: %s:%s", cache_host, cache_port)
+    logger.info("Connecting to prerendered tiles Redis host: %s:%s", cache_host, cache_port)
     import redis
     redis_client = redis.Redis(host=cache_host, port=cache_port, socket_connect_timeout=1)
 else:
-    logging.info("Rendered tiles cache is disabled")
+    logger.info("Rendered tiles cache is disabled")
 # Initialize Redis cache for raw tiles
 cache_host_raw = parameter_provider.get_parameter('/{}/{}/cache/ElastiCacheHostRaw'.format(STACK_PREFIX, STAGE))
 cache_port_raw = parameter_provider.get_parameter('/{}/{}/cache/ElastiCachePortRaw'.format(STACK_PREFIX, STAGE))
 enable_raw_cache = parameter_provider.get_parameter('/{}/{}/cache/EnableRawCache'.format(STACK_PREFIX, STAGE))
 redis_client_raw = None
 if cache_host is not None and enable_raw_cache == "1" and os.environ.get("AWS_EXECUTION_ENV") is not None:
-    logging.info("Connecting to raw tiles Redis host: %s:%s", cache_host_raw, cache_port_raw)
+    logger.info("Connecting to raw tiles Redis host: %s:%s", cache_host_raw, cache_port_raw)
     import redis
     redis_client_raw = redis.Redis(host=cache_host_raw, port=cache_port_raw, socket_connect_timeout=1)
 else:
-    logging.info("Raw tiles cache is disabled")
+    logger.info("Raw tiles cache is disabled")
 
 image_permissions_cache = {}
 
@@ -186,6 +186,7 @@ class Handler:
     def __init__(self):
         self.session = None
         self.client = None
+        self.user_uuid = None
 
     def _open_session(self):
         if self.session is None:
@@ -233,13 +234,13 @@ class Handler:
         try:
             tile_data = redis_client.get(key)
             if tile_data is not None:
-                logging.debug("Redis cache HIT")
+                logger.debug("Redis cache HIT")
             else:
-                logging.debug("Redis cache MISS")
+                logger.debug("Redis cache MISS")
             return tile_data
         except Exception as e:
-            logging.error(e)
-            logging.warning("Disabling cache")
+            logger.error(e)
+            logger.warning("Disabling cache")
             redis_client = None
 
     def _set_prerendered_to_cache(self, uuid, x, y, z, t, level, channel_group_uuid, tile_data):
@@ -248,6 +249,31 @@ class Handler:
             return
         key = f'{uuid}/T{t}-Z{z}-L{level}-Y{y}-X{x}/{channel_group_uuid}'
         redis_client.set(key, tile_data)
+
+    @response(200)
+    def raw_tile(self, event, context):
+        uuid = event_path_param(event, 'uuid')
+        validate_uuid(uuid)
+        self._has_image_permission(self.user_uuid, uuid, 'Read')
+
+        x = int(event_path_param(event, 'x'))
+        y = int(event_path_param(event, 'y'))
+        z = int(event_path_param(event, 'z'))
+        t = int(event_path_param(event, 't'))
+        level = int(event_path_param(event, 'level'))
+        channel = int(event_path_param(event, 'channels'))
+
+        tile_provider = S3TileProvider(bucket.split(':')[-1],
+                                       missing_tile_callback=handle_missing_tile,
+                                       cache_client=redis_client_raw)
+        tile = tile_provider.get_tile(uuid, x, y, z, t, channel, level)
+
+        # Encode rendered image as PNG
+        img = BytesIO()
+        imagecodecs.imwrite(img, tile, codec="png", level=1)
+        img.seek(0)
+
+        return img.read()
 
     @response(200)
     def render_tile(self, event, context):
@@ -357,7 +383,6 @@ class Handler:
 
         # Blend the raw tiles
         composite = render.composite_channels(channels, gamma=gamma)
-        # CV2 requires 0 - 255 values
 
         # Encode rendered image as JPG
         img = BytesIO()
@@ -492,11 +517,9 @@ class Handler:
                     continue
 
                 # Add to list of tiles to fetch
-                args.append((client,
-                             bucket.split(':')[-1],
-                             uuid,
-                             i,
+                args.append((uuid,
                              j,
+                             i,
                              z,
                              t,
                              _id,
@@ -526,10 +549,9 @@ class Handler:
         # Blend the raw tiles
         composite = render.composite_subtiles(tiles, tile_shape, origin, shape)
 
-        # Rescale for desired output size
+        #Rescale for desired output size
         if scaling_factor != 1:
-            scaled = render.scale_image_nearest_neighbor(composite,
-                                                         scaling_factor)
+            scaled = render.scale_image_nearest_neighbor(composite, scaling_factor)
         else:
             scaled = composite
 
@@ -539,10 +561,8 @@ class Handler:
 
         # Encode rendered image as JPG
         img = BytesIO()
-        if self.content_type == "image/webp":
-            imagecodecs.imwrite(img, scaled, codec="webp")
-        else:
-            imagecodecs.imwrite(img, scaled, codec="jpg")
+        imagecodecs.imwrite(img, scaled, codec="jpg")
+        img.seek(0)
         return img.read()
 
     @response(200)
@@ -593,3 +613,4 @@ render_region = handler.render_region
 prerendered_tile = handler.prerendered_tile
 omero_render_tile = handler.omero_render_tile
 get_autosettings = handler.get_autosettings
+raw_tile = handler.raw_tile

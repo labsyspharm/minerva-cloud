@@ -70,6 +70,22 @@ functions:
             authorizerId:
               Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
 
+  rawTile:
+    name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-rawTile
+    handler: src.handler.raw_tile
+    memorySize: 512
+    events:
+      - http:
+          method: GET
+          cors: true
+          path: /image/{uuid}/raw-tile/{x}/{y}/{z}/{t}/{level}/{channels}
+          contentHandling: CONVERT_TO_BINARY
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Fn::ImportValue: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-ApiGatewayAuthorizerID
+
+
   omeroRenderTile:
     name: ${self:provider.environment.STACK_PREFIX}-${self:provider.environment.STAGE}-omeroRenderTile
     handler: src.handler.omero_render_tile
@@ -149,9 +165,6 @@ custom:
       - "image/webp"
 
   pythonRequirements:
-    pipCmdExtraArgs:
-      - --compile
-      - --global-option=build_ext
     useDownloadCache: false
     useStaticCache: false
     dockerizePip: non-linux
