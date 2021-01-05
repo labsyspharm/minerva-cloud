@@ -303,7 +303,7 @@ Resources:
         Memory: 30000  # FIXME look into memory optimizing bfextract
         JobRoleArn: !GetAtt BatchRole.Arn
         Vcpus: 4
-        Image: sorgerlab/bfextractor:0.0.11
+        Image: sorgerlab/bfextractor:0.1.0
       RetryStrategy:
         Attempts: 1
 

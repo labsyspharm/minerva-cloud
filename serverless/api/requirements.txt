@@ -1,8 +1,10 @@
-boto3==1.12.39
+boto3==1.14.44
 numpy==1.18
-tifffile==2020.2.16
+tifffile==2020.10.1
 imagecodecs==2020.2.18
 redis
+zarr==2.6.1
+s3fs==0.5.2
 #-e ../../../minerva-lib-python
 git+https://github.com/labsyspharm/minerva-lib-python@master#egg=minerva-lib
 #-e ../../../minerva-db

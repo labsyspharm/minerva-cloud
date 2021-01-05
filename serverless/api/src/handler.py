@@ -250,6 +250,13 @@ class Handler:
         key = f'{uuid}/T{t}-Z{z}-L{level}-Y{y}-X{x}/{channel_group_uuid}'
         redis_client.set(key, tile_data)
 
+    def get_raw_format(self, event):
+        raw_format = event_query_param(event, 'rawformat')
+        if raw_format is None:
+            # Backwards compatibility for older clients
+            return "tiff"
+        return raw_format
+
     @response(200)
     def raw_tile(self, event, context):
         uuid = event_path_param(event, 'uuid')
@@ -262,11 +269,12 @@ class Handler:
         t = int(event_path_param(event, 't'))
         level = int(event_path_param(event, 'level'))
         channel = int(event_path_param(event, 'channels'))
+        raw_format = self.get_raw_format(event)
 
         tile_provider = S3TileProvider(bucket.split(':')[-1],
                                        missing_tile_callback=handle_missing_tile,
                                        cache_client=redis_client_raw)
-        tile = tile_provider.get_tile(uuid, x, y, z, t, channel, level)
+        tile = tile_provider.get_tile(uuid, x, y, z, t, channel, level, raw_format)
 
         # Encode rendered image as PNG
         img = BytesIO()
@@ -298,6 +306,8 @@ class Handler:
         else:
             gamma = 1.0
 
+        raw_format = self.get_raw_format(event)
+
         # Split the channels path parameters
         channel_path_params = event['pathParameters']['channels'].split('/')
 
@@ -305,7 +315,7 @@ class Handler:
         channels = [_parse_channel_params(param)
                     for param in channel_path_params]
 
-        return self._render_tile(uuid, x, y, z, t, level, channels, gamma=gamma, codec='jpg')
+        return self._render_tile(uuid, x, y, z, t, level, channels, gamma=gamma, codec='jpg', raw_format=raw_format)
 
     @response(200)
     def omero_render_tile(self, event, context):
@@ -347,6 +357,7 @@ class Handler:
         t = int(event_path_param(event, 't'))
         level = int(event_path_param(event, 'level'))
         channel_group_uuid = event_path_param(event, 'channel_group')
+        raw_format = self.get_raw_format(event)
 
         logger.info("Render tile L=%s X=%s Y=%s CG_uuid=%s START", level, x, y, channel_group_uuid)
 
@@ -359,19 +370,20 @@ class Handler:
         channels = _channels_json_to_params(rendering_settings.channels)
 
         # Always encode as jpg so that cached tiles are in consistent format
-        image = self._render_tile(uuid, x, y, z, t, level, channels, gamma=1, codec='jpg')
+        image = self._render_tile(uuid, x, y, z, t, level, channels, gamma=1, codec='jpg', raw_format=raw_format)
         self._set_prerendered_to_cache(uuid, x, y, z, t, level, channel_group_uuid, image)
         return image
 
-    def _render_tile(self, uuid, x, y, z, t, level, channels, gamma=1, codec='jpg'):
+    def _render_tile(self, uuid, x, y, z, t, level, channels, gamma=1, codec='jpg', raw_format="tiff", tile_size=1024):
         # Prepare for blending
         args = [(uuid, x, y, z, t,
-                 channel['index'], level) for channel in channels]
+                 channel['index'], level, raw_format) for channel in channels]
 
         # Fetch raw tiles in parallel
         tile_provider = S3TileProvider(bucket.split(':')[-1],
                                        missing_tile_callback=handle_missing_tile,
-                                       cache_client=redis_client_raw)
+                                       cache_client=redis_client_raw,
+                                       tile_size=tile_size)
         try:
             images = pool.starmap(tile_provider.get_tile, args)
         finally:
