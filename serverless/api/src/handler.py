@@ -254,7 +254,7 @@ class Handler:
         raw_format = event_query_param(event, 'rawformat')
         if raw_format is None:
             # Backwards compatibility for older clients
-            return "tiff"
+            return "zarr"
         return raw_format
 
     @response(200)
