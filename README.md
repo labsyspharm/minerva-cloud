@@ -1,9 +1,9 @@
 <img width="500px" src="./Minerva-Cloud_HorizLogo_RGB.svg" />
 
-# Minerva Cloud - backend infrastructure
+# Minerva Cloud - AWS backend infrastructure
 
-This repository contains the templates necessary to deploy the Minerva Cloud platform.
-It is comprised of some CloudFormation and serverless configurations.
+This repository contains the templates necessary to deploy the Minerva Cloud platform in AWS.
+It is comprised of some CloudFormation and Serverless Framework configurations.
 
 ## API Documentation
 
@@ -28,12 +28,18 @@ this can be setup with:
 ## Configuration File
 
 There is an example configuration file included in the repository: minerva-config.example.yml
+You need to update the vpc, subnets and other values in the configuration file.
 
 ## Instructions
 
 You can later update the stacks by replacing word "create" with "update"
 Instructions below presume you have the configuration file in a folder named minerva-configs,
 which is a sibling to the minerva-cloud project root directory.
+
+Before deploying the various serverless applications, you should install the needed node packages by running within each serverless/* directory:
+```bash
+npm install
+```
 
 1. Deploy the common cloudformation infrastructure
 
@@ -91,13 +97,16 @@ cd serverless/api
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
-9. Deploy the author serverless infrastructure
-
+9. Deploy the author serverless infrastructure (OPTIONAL)
+* This is only for integrating Minerva Author with Minerva Cloud
 ```bash
 cd serverless/author
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
-10. Run AWS lambda `initdb` method to initialise the database
+10. Run AWS lambda `initdb` function to initialise the database
+* Find the function name (e.g. minerva-test-dev-initDb) from AWS Lambda console
+* Open the function and click "Test"
 
 11. Create some users using the AWS Cognito console
+* The new users are automatically created in Minerva database by a Cognito trigger.

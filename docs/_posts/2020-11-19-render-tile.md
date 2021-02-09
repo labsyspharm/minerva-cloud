@@ -34,7 +34,7 @@ Pattern for settings is: **index1,color1,min1,max1/index2,color2,min2,max2/...**
 
 ### Response
 
-Image tile encoded as 8-bit JPEG (binary).
+Image tile encoded as 8-bit per RGB channel JPEG (binary).
 
 ### Example
 

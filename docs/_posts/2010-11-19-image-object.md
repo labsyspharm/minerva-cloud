@@ -5,7 +5,7 @@ title: 'Image'
 layout: null
 ---
 
-Image object describes a single image. Does not contain pixel data which is stored in object storage.
+Image object describes a single image. Does not contain pixel data (which is stored in S3 object storage).
 
 ### Image
 

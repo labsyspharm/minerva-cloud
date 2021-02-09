@@ -4,13 +4,13 @@ title: 'Introduction'
 layout: null
 ---
 
-**Minerva** is a microscopy imaging software suite which allows visualizing, analyzing and managing high-dimensional microscopy image data.
-Minerva is designed to be fully cloud-native, taking advantage of cloud features such as object storage and serverless computing.
+**Minerva** is a microscopy imaging software platform which allows visualizing, analyzing and storing high-dimensional microscopy image data.
+Minerva is designed to be cloud-native, taking full advantage of cloud features such as object storage and serverless computing.
 It is composed of several integrated applications:
 
 ![Minerva Cloud](images/Minerva-Cloud_HorizLogo_RGB.svg){:class="img-responsive"}{:width="200"}
 
-**Minerva Cloud** is a system where image data can be imported and stored in repositories. The images can be served either as raw image data or as composited colorized images.
+**Minerva Cloud** is a system where image data can be imported and stored in repositories. The images can be served either as raw image tile data or as composited colorized tiled images.
 
 ![Minerva Author](images/Minerva-Author_HorizLogo_RGB.svg){:class="img-responsive"}{:width="200"}
 

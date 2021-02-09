@@ -8,7 +8,7 @@ layout: null
 
 This section describes the **low-level mechanics** of image importing. The easiest way to import images is to use either Minerva Cloud web interface or **Minerva CLI**.
 
-Multichannel microscopy images tend to be large, a typical image might be in the range of 10-200 GBs. Therefore the image importing process is run in a background AWS Batch job. The import process generates a tiled image pyramid (or uses an existing pyramid) and stores it in S3 as a highly scalable tile structure. The original image file is either discarded or it can be archived in low-cost S3 Glacier.
+Multichannel microscopy images tend to be large, a typical image might be in the range of 10-200 GBs. Importing them takes several minutes to one hour. AWS Lambda timeout is not enough and therefore the image importing process is run in a background AWS Batch job. The import process generates a tiled image pyramid (or uses an existing pyramid) and stores it in S3 as OME-ZARR, a highly scalable tile structure. The original image file is either discarded or it can be archived in low-cost S3 Glacier.
 
 ### Import steps
 
@@ -44,7 +44,7 @@ The response will contain AWS credentials, S3 bucket name and key to upload the 
 
 #### 4. Upload the image to the S3 bucket/key
 
-Upload the image to the given S3 bucket and key, using the provided AWS temporary credentials (NOT the user's credentials). You can use e.g. AWS CLI or any programmatic client like boto3 for Python.
+Upload the image to the given S3 bucket and key, using the provided **AWS temporary credentials** (NOT the user's credentials). You can use e.g. AWS CLI or any programmatic client like boto3 for Python.
 
 ```python
 import boto3
@@ -69,7 +69,7 @@ curl -X PUT -H "Content-Type: application/json" -d '{"complete": true }' https:/
 
 #### 6. Wait for the import Batch Job to finish
 
-The import Batch Job may take around 10-45 mins, depending on image size and EC2 instance availability. The status of the import can be checked with:
+The import Batch Job may take around 10-60 mins, depending on image size and EC2 instance availability. The status of the import can be checked with:
 
 ```bash
 curl -X GET https://$BASE_URL/import/{import_uuid}/filesets
