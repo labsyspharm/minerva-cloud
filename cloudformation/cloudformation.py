@@ -92,7 +92,7 @@ def prepare_cache_parameters(config):
     ])
 
 def main(operation, stack, config):
-
+    exit_code = 0
     # Load the configuration file
     config = load_config(config)
 
@@ -198,6 +198,9 @@ def main(operation, stack, config):
 
     if rollback:
         print_stack_error(cf, stack_id)
+        exit_code = 1
+
+    return exit_code
 
 
 if __name__ == '__main__':
@@ -223,4 +226,5 @@ if __name__ == '__main__':
 
     opts = parser.parse_args()
 
-    main(opts.operation, str(opts.stack), opts.config)
+    exit_code = main(opts.operation, str(opts.stack), opts.config)
+    sys.exit(exit_code)

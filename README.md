@@ -3,7 +3,8 @@
 # Minerva Cloud - AWS backend infrastructure
 
 This repository contains the templates necessary to deploy the Minerva Cloud platform in AWS.
-It is comprised of some CloudFormation and Serverless Framework configurations.
+It contains CloudFormation templates for creating the AWS infrastructure (S3 buckets, database, Cognito userpool etc.),
+and Serverless Framework configurations for creating various serverless applications.
 
 ## API Documentation
 
@@ -16,8 +17,8 @@ These need to be created manually in AWS console
 - A pair of private subnets with NAT gateways configured in the VPC.
 - A default security group which allows communication in/out from itself.
 - A security group which allows SSH communication to EC2 instances as required.
-- A configuration file with these and some other properties.
-- A deployment bucket for serverless.
+- A yaml configuration file with these and some other properties.
+- A deployment bucket for Serverless Framework.
 
 ## AWS Profile
 
@@ -44,63 +45,66 @@ npm install
 1. Deploy the common cloudformation infrastructure
 
 ```bash
-cd cloudformation
+# Run in /cloudformation
 python cloudformation.py create common ../../minerva-configs/test/config.yml
 ```
 
 2. Deploy the cognito cloudformation infrastructure
 
 ```bash
-cd cloudformation
+# Run in /cloudformation
 python cloudformation.py create cognito ../../minerva-configs/test/config.yml
 ```
 
-3. Build the Batch AMI
+3. Build the Batch AMI (Amazon Machine Image)
 
 ```bash
-cd ami-builder
+# Run in /ami-builder
 python build.py ../../minerva-configs/test/config.yml
 ```
+After the image has been created, the Batch AMI ID must be added to config.yml.
 
 4. Deploy the Batch cloudformation infrastructure
 
 ```bash
-cd cloudformation
+# Run in /cloudformation
 python cloudformation.py create batch ../../minerva-configs/test/config.yml
 ```
 
 5. Deploy the auth serverless infrastructure
 
 ```bash
-cd serverless/auth
+# Run in /serverless/auth
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
 6. Deploy the db serverless infrastructure
 
 ```bash
-cd serverless/db
+# Run in /serverless/db
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
 7. Deploy the batch serverless infrastructure
 
 ```bash
-cd serverless/batch
+# Run in /serverless/batch
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
 8. Deploy the api serverless infrastructure
 
 ```bash
-cd serverless/api
+# Run in /serverless/api
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
 9. Deploy the author serverless infrastructure (OPTIONAL)
 * This is only for integrating Minerva Author with Minerva Cloud
 ```bash
-cd serverless/author
+# Run in /cloudformation
+python cloudformation.py create author ../../minerva-configs/test/config.yml
+# Run in /serverless/author
 serverless deploy --configfile ../../../minerva-configs/test/config.yml
 ```
 
@@ -110,3 +114,4 @@ serverless deploy --configfile ../../../minerva-configs/test/config.yml
 
 11. Create some users using the AWS Cognito console
 * The new users are automatically created in Minerva database by a Cognito trigger.
+* The password has to be updated on the first sign-in
