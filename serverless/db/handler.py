@@ -1,4 +1,3 @@
-import base64
 from typing import Any, Callable, Dict, List, Union, Optional
 from functools import wraps
 import os
@@ -6,9 +5,6 @@ import logging
 import boto3
 import json
 import re
-from io import BytesIO
-import xml.etree.ElementTree as ET
-from uuid import uuid4
 from datetime import date, datetime
 from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
@@ -16,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from minerva_db.sql.api import Client
 from minerva_db.sql.api.utils import to_jsonapi
 
-logger = logging.getLogger()
+logger = logging.getLogger("minerva")
 logger.setLevel(logging.INFO)
 
 # Get environment variables
@@ -96,15 +92,8 @@ write_policy = '''{{
             ],
             "Resource": [
                 "{0}"
-            ],
-            "Condition": {{
-                "StringLike": {{
-                    "s3:prefix": [
-                        "{1}/*"
-                    ]
-                }}
-            }}
-        }}
+            ]
+        }}        
     ]
 }}'''
 
@@ -177,6 +166,7 @@ def make_response(code: int, body: Union[Dict, List], content_type="application/
         body = json.dumps(body, default=json_custom)
         binary = False
     else:
+        import base64
         body = base64.b64encode(body).decode('utf-8')
         binary = True
 
@@ -299,6 +289,7 @@ def _event_path_param(event, key):
 
 
 _valid_name = re.compile('^[a-zA-Z][a-zA-Z0-9\\-_]+$')
+_valid_file_name = re.compile('^[0-9a-zA-Z_\-. ]+$')
 _length_name = 128
 
 
@@ -309,6 +300,12 @@ def _validate_name(s):
                          'underscore. The maximum length '
                          'is {}'.format(_length_name))
 
+def _validate_image_name(s):
+    if len(s) > _length_name or _valid_file_name.match(s) is None:
+        raise ValueError('Filename is invalid. Valid names contain only alphanumeric '
+                         'characters, dash, dot and underscore. '
+                         'The maximum length '
+                         'is {}'.format(_length_name))
 
 _valid_uuid = re.compile(
     '^[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$'
@@ -425,6 +422,7 @@ class Handler:
     def create_group(self, event, context):
         name = self.body['name']
         _validate_name(name)
+        from uuid import uuid4
         uuid = str(uuid4())
 
         return self.client.create_group(uuid, name, self.user_uuid)
@@ -434,6 +432,7 @@ class Handler:
         name = self.body['name']
         raw_storage = self.body.get('raw_storage')
         _validate_name(name)
+        from uuid import uuid4
         uuid = str(uuid4())
 
         return self.client.create_repository(uuid, name, self.user_uuid,
@@ -448,7 +447,8 @@ class Handler:
         format = self.body['format']
         tile_size = self.body['tile_size']
         rgb = self.body.get('rgb')
-        _validate_name(name)
+        _validate_image_name(name)
+        from uuid import uuid4
         uuid = str(uuid4())
         return self.client.create_image(uuid, name, pyramid_levels, format, compression, tile_size, rgb, fileset_uuid=None, repository_uuid=repository_uuid)
 
@@ -460,6 +460,7 @@ class Handler:
         _validate_uuid(repository_uuid)
         self._has_permission(self.user_uuid, 'Repository', repository_uuid,
                              'Write')
+        from uuid import uuid4
         uuid = str(uuid4())
 
         return self.client.create_import(uuid, name, repository_uuid)
@@ -483,6 +484,7 @@ class Handler:
 
         # Check that some basic values are found in xml
         # TODO ideally validate metadata according to OME schema
+        import xml.etree.ElementTree as ET
         e_root = ET.fromstring(self.body)
         e_image = e_root.find('ome:Image', {'ome': OME_NS})
         if e_image is None:
@@ -510,6 +512,7 @@ class Handler:
             channels = group.get('channels')
             label = group.get('label')
             if 'uuid' not in group:
+                from uuid import uuid4
                 uuid = str(uuid4())
                 group['uuid'] = uuid
                 self.client.create_rendering_settings(uuid, image_uuid, channels, label)
@@ -679,7 +682,9 @@ class Handler:
                                           f'{bucket_key}/metadata.xml')
         body = obj.get()['Body']
         data = body.read()
+        from io import BytesIO
         stream = BytesIO(data)
+        import xml.etree.ElementTree as ET
         e_root = ET.fromstring(stream.getvalue().decode('UTF-8'))
         e_image = e_root.find('ome:Image[@ID="Image:{}"]'.format(uuid),
                               {'ome': OME_NS})
