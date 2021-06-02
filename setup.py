@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 def main():
     packages = find_packages()
     print("Installing `minerva-cloud` packages:\n", '\n'.join(packages))
-    extras_require = {'test': ['moto']}
+    extras_require = {'test': ['moto', 'docker']}
     extras_require['all'] = list({dep for deps in extras_require.values()
                                   for dep in deps})
     setup(name='minerva_cloud',
