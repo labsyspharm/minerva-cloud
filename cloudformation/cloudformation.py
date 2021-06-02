@@ -1,8 +1,9 @@
 import os
 import sys
-from ruamel.yaml import YAML
-import boto3
 import time
+import boto3
+import click
+from ruamel.yaml import YAML
 
 
 def load_config(config):
@@ -220,28 +221,30 @@ def operate_on_stack(operation, stack_name, config):
     return
 
 
-if __name__ == '__main__':
+@click.group()
+def cloudformation():
+    """Create, Update, and Delete the Minerva stacks via cloudformation."""
 
-    class Stack(Enum):
-        common = 'common'
-        cognito = 'cognito'
-        batch = 'batch'
-        cache = 'cache'
-        author = 'author'
 
-        def __str__(self):
-            return self.value
+@cloudformation.command()
+@click.argument("stack", type=click.Choice(Stack.list_stacks()))
+@click.argument("config", type=click.File('r'))
+def create(stack, config):
+    """Create a new stack, specified by the given config file."""
+    operate_on_stack("create", stack, config)
 
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(dest='operation')
-    parser_create = subparsers.add_parser('create', help='Create stack')
-    parser_update = subparsers.add_parser('update', help='Update stack')
-    parser_delete = subparsers.add_parser('delete', help='Delete stack')
-    parser.add_argument('stack', type=Stack, choices=list(Stack))
-    parser.add_argument('config', type=argparse.FileType('r'),
-                        help='YAML configuration file path')
 
-    opts = parser.parse_args()
+@cloudformation.command()
+@click.argument("stack", type=click.Choice(Stack.list_stacks()))
+@click.argument("config", type=click.File('r'))
+def update(stack, config):
+    """Update the named stack with the given config file."""
+    operate_on_stack("update", stack, config)
 
-    exit_code = main(opts.operation, str(opts.stack), opts.config)
-    sys.exit(exit_code)
+
+@cloudformation.command()
+@click.argument("stack", type=click.Choice(Stack.list_stacks()))
+@click.argument("config", type=click.File('r'))
+def delete(stack, config):
+    """Delete the given stack."""
+    operate_on_stack("delete", stack, config)
