@@ -11,29 +11,26 @@ SLEEP = 30
 INSTANCE_TYPE = 't2.micro'
 
 
+class ConfigError(Exception):
+    pass
+
+
 @click.group()
 def ami():
     """Build AMIs for AWS."""
 
 
 @ami.command('build')
-@click.argument('configfile')
+@click.argument('configfile', type=click.File('r'))
 def build_ami(configfile):
     """Build an EC2 instance AMI from the given config file.
 
     Build an AMI for Batch use with EFS. Common cloudformation infrastructure
     must already be deployed.
     """
-    try:
-        config = yaml.load(configfile)
-    except Exception as e:
-        print('Error reading configuration YAML: {}'.format(e))
-        sys.exit(1)
-
-    # Validate the number of subnets
+    config = yaml.load(configfile)
     if len(config['SubnetsPublic']) != 2:
-        print('Exactly 2 public subnets required')
-        sys.exit(1)
+        raise ConfigError('Exactly 2 public subnets required')
 
     region = config['Region']
     prefix = config['StackPrefix']
@@ -60,24 +57,24 @@ def build_ami(configfile):
 
     # Get the ID of the EFS volume
     efs_id = ssm.get_parameter(
-        Name='/{}/{}/common/EFSID'.format(prefix, stage)
+        Name=f'/{prefix}/{stage}/common/EFSID'
     )['Parameter']['Value']
 
     # Get the ID of the General Security Group
     general_sg_id = ssm.get_parameter(
-        Name='/{}/{}/common/GeneralSGID'.format(prefix, stage)
+        Name=f'/{prefix}/{stage}/common/GeneralSGID'
     )['Parameter']['Value']
 
     security_groups = [ssh_security_group, general_sg_id]
 
     # Build the user data
-    user_data = '''#!/usr/bin/env bash
+    user_data = f'''#!/usr/bin/env bash
     sudo yum install -y amazon-efs-utils
     sudo mkdir /mnt/efs
     sudo echo  >> /etc/fstab
-    echo "{} /mnt/efs	efs	defaults,_netdev 0   0" \
+    echo "{efs_id} /mnt/efs	efs	defaults,_netdev 0   0" \
         | sudo tee --append /etc/fstab
-    '''.format(efs_id)
+    '''
 
     # Format the AMI output details
     description = DESCRIPTION.format(efs_id, prefix, stage)
