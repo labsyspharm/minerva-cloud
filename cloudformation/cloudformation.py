@@ -1,7 +1,3 @@
-#!/usr/bin/env python
-
-import argparse
-from enum import Enum
 import os
 import sys
 from ruamel.yaml import YAML
@@ -40,59 +36,94 @@ def print_stack_error(cf, stack_id):
             print(event["ResourceStatus"])
             print(event["ResourceStatusReason"])
 
-def string_configs_to_parameters(config, keys):
+class Stack:
+    @classmethod
+    def from_name(cls, name):
+        for s in cls.__subclasses__():
+            if s.name() == name:
+                return s
+        raise ValueError(f"Invalid stack name: \"{name}\".")
 
-    return [make_parameter(key, str(config[key])) for key in keys]
+    @classmethod
+    def list_stacks(cls):
+        return [s.name() for s in cls.__subclasses__()]
 
+    @staticmethod
+    def string_configs_to_parameters(config, keys):
+        return [make_parameter(key, str(config[key])) for key in keys]
 
-def get_stack_template_path(stack):
+    @classmethod
+    def name(cls):
+        return cls.__name__.lower()
 
-    return os.path.join(os.path.dirname(__file__), '{}.yml'.format(stack))
+    @classmethod
+    def get_template_path(cls):
+        return os.path.join(os.path.dirname(__file__), f'{cls.name()}.yml')
 
-
-def prepare_common_parameters(config):
-
-    parameters = string_configs_to_parameters(config, [
-        'VpcId',
-        'DatabasePassword',
-        'EnableRenderedCache',
-        'EnableRawCache'
-    ])
-
-    parameters.append(make_parameter('SubnetsPublic',
-                                     ','.join(config['SubnetsPublic'])))
-
-    return parameters
-
-
-def prepare_batch_parameters(config):
-
-    parameters = string_configs_to_parameters(config, [
-        'BatchAMI',
-        'BatchClusterEC2MinCpus',
-        'BatchClusterEC2MaxCpus',
-        'BatchClusterEC2DesiredCpus',
-        'BatchClusterSpotMinCpus',
-        'BatchClusterSpotMaxCpus',
-        'BatchClusterSpotDesiredCpus',
-        'BatchClusterSpotBidPercentage'
-    ])
-
-    parameters.append(make_parameter('SubnetsPublic',
-                                     ','.join(config['SubnetsPublic'])))
-
-    return parameters
+    @classmethod
+    def prepare_parameters(cls, config):
+        parameters = cls.string_configs_to_parameters(config, [
+            'StackPrefix',
+            'Stage',
+            'ProjectTag'
+        ])
+        return parameters
 
 
-def prepare_cache_parameters(config):
-    return string_configs_to_parameters(config, [
-        'DefaultSecurityGroup',
-        'CacheNodeType',
-        'RawCacheNodeType'
-    ])
+class Common(Stack):
+    @classmethod
+    def prepare_parameters(cls, config):
+        parameters = super(Common, cls).prepare_parameters()
+        parameters += cls.string_configs_to_parameters(config, [
+            'VpcId',
+            'DatabasePassword',
+            'EnableRenderedCache',
+            'EnableRawCache'
+        ])
+        parameters.append(make_parameter('SubnetsPublic',
+                                         ','.join(config['SubnetsPublic'])))
+        return parameters
 
-def main(operation, stack, config):
-    exit_code = 0
+
+class Cognito(Stack):
+    pass
+
+
+class Batch(Stack):
+    @classmethod
+    def prepare_parameters(cls, config):
+        parameters = super(Batch, cls).prepare_parameters()
+        parameters += cls.string_configs_to_parameters(config, [
+            'BatchAMI',
+            'BatchClusterEC2MinCpus',
+            'BatchClusterEC2MaxCpus',
+            'BatchClusterEC2DesiredCpus',
+            'BatchClusterSpotMinCpus',
+            'BatchClusterSpotMaxCpus',
+            'BatchClusterSpotDesiredCpus',
+            'BatchClusterSpotBidPercentage'
+        ])
+        parameters.append(make_parameter('SubnetsPublic',
+                                         ','.join(config['SubnetsPublic'])))
+        return parameters
+
+
+class Cache(Stack):
+    @classmethod
+    def prepare_parameters(cls, config):
+        parameters = super(Cache, cls).prepare_parameters()
+        return parameters + cls.string_configs_to_parameters(config, [
+            'DefaultSecurityGroup',
+            'CacheNodeType',
+            'RawCacheNodeType'
+        ])
+
+
+class Author(Stack):
+    pass
+
+
+def operate_on_stack(operation, stack_name, config):
     # Load the configuration file
     config = load_config(config)
 
@@ -112,45 +143,22 @@ def main(operation, stack, config):
         'update': cf.update_stack,
         'delete': cf.delete_stack
     }
-    if operation not in cf_methods.keys():
-        print(f'Operation "{operation}" is not implemented')
-        sys.exit(1)
-
     cf_method = cf_methods[operation]
 
     # Build a prefixed name for this stack
-    name = f'{prefix}-cf-{stack}'
+    cf_name = f'{prefix}-cf-{stack_name}'
 
-    # Read the template
-    template_path = get_stack_template_path(stack)
-    with open(template_path, 'r') as f:
-        template_body = f.read()
-
-    # Prepare the parameters common to all stacks
-    shared_parameters = string_configs_to_parameters(config, [
-        'StackPrefix',
-        'Stage',
-        'ProjectTag'
-    ])
-
-    # Prepare the parameters specific to the requested stack
-    if stack == 'common':
-        parameters = prepare_common_parameters(config)
-    elif stack == 'cognito':
-        parameters = []
-    elif stack == 'batch':
-        parameters = prepare_batch_parameters(config)
-    elif stack == 'cache':
-        parameters = prepare_cache_parameters(config)
-    elif stack == 'author':
-        parameters = []
-
+    # Trigger the operation
     if operation in ['create', 'update']:
-        # Trigger the operation
+        stack = Stack.from_name(stack_name)
+        template_path = stack.get_template_path()
+        with open(template_path, 'r') as f:
+            template_body = f.read()
+        parameters = stack.prepare_parameters(config)
         response = cf_method(
-            StackName=name,
+            StackName=cf_name,
             TemplateBody=template_body,
-            Parameters=shared_parameters + parameters,
+            Parameters=parameters,
             Capabilities=[
                 'CAPABILITY_NAMED_IAM',
             ],
@@ -161,16 +169,19 @@ def main(operation, stack, config):
         )
     elif operation == 'delete':
         response = cf_method(
-            StackName=name
+            StackName=cf_name
         )
+    else:
+        raise ValueError(f"Invalid operation: \"{operation}\".")
 
     print(response)
 
     if 'StackId' in response:
         stack_id = response['StackId']
-        print(f'Stack {stack} {operation} completed: {stack_id}')
+        print(f'Stack {stack_name} {operation} completed: {stack_id}')
         poll_progress = True
     else:
+        stack_id = None
         poll_progress = False
 
     status = ""
@@ -181,14 +192,14 @@ def main(operation, stack, config):
         time.sleep(2)
         response = cf.describe_stacks(StackName=stack_id)
 
-        for stack in response['Stacks']:
-            if stack['StackId'] == stack_id:
-                if stack['StackStatus'] != status:
-                    status = stack['StackStatus']
+        for stack_name in response['Stacks']:
+            if stack_name['StackId'] == stack_id:
+                if stack_name['StackStatus'] != status:
+                    status = stack_name['StackStatus']
                     sys.stdout.write('>' + status)
                     poll_progress = 'IN_PROGRESS' in status
 
-                if 'ROLLBACK' in stack['StackStatus']:
+                if 'ROLLBACK' in stack_name['StackStatus']:
                     rollback = True
 
         sys.stdout.flush()
