@@ -29,12 +29,19 @@ def make_parameter(key, value):
         'ParameterValue': value
     }
 
-def print_stack_error(cf, stack_id):
-    res = cf.describe_stack_events(StackName=stack_id)
-    for event in res["StackEvents"]:
-        if "FAILED" in event["ResourceStatus"]:
-            print(event["ResourceStatus"])
-            print(event["ResourceStatusReason"])
+
+class BuildFailure(Exception):
+    def __init__(self, cf, stack_id):
+        res = cf.describe_stack_events(StackName=stack_id)
+        lines = []
+        for event in res["StackEvents"]:
+            if "FAILED" in event["ResourceStatus"]:
+                lines.append(event["ResourceStatus"])
+                lines.append(event["ResourceStatusReason"])
+        failure_log = '\n'.join(lines)
+        msg = f"Failed to build stack:\n{failure_log}"
+        super(BuildFailure, self).__init__(msg)
+
 
 class Stack:
     @classmethod
@@ -208,10 +215,9 @@ def operate_on_stack(operation, stack_name, config):
     print("Stack status: ", status)
 
     if rollback:
-        print_stack_error(cf, stack_id)
-        exit_code = 1
+        raise BuildFailure(cf, stack_id)
 
-    return exit_code
+    return
 
 
 if __name__ == '__main__':
