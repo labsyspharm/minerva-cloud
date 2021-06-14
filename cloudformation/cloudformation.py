@@ -44,7 +44,7 @@ class BuildFailure(Exception):
         super(BuildFailure, self).__init__(msg)
 
 
-class Stack:
+class CloudFormationStack:
     @classmethod
     def from_name(cls, name):
         for s in cls.__subclasses__():
@@ -83,7 +83,7 @@ class Stack:
         return parameters
 
 
-class Common(Stack):
+class Common(CloudFormationStack):
     @classmethod
     def prepare_parameters(cls, config):
         parameters = super(Common, cls).prepare_parameters(config)
@@ -98,11 +98,11 @@ class Common(Stack):
         return parameters
 
 
-class Cognito(Stack):
+class Cognito(CloudFormationStack):
     pass
 
 
-class Batch(Stack):
+class Batch(CloudFormationStack):
     @classmethod
     def prepare_parameters(cls, config):
         parameters = super(Batch, cls).prepare_parameters(config)
@@ -121,7 +121,7 @@ class Batch(Stack):
         return parameters
 
 
-class Cache(Stack):
+class Cache(CloudFormationStack):
     @classmethod
     def prepare_parameters(cls, config):
         parameters = super(Cache, cls).prepare_parameters(config)
@@ -132,7 +132,7 @@ class Cache(Stack):
         ])
 
 
-class Author(Stack):
+class Author(CloudFormationStack):
     pass
 
 
@@ -163,7 +163,7 @@ def operate_on_stack(operation, stack_name, config):
 
     # Trigger the operation
     if operation in ['create', 'update']:
-        stack = Stack.from_name(stack_name)
+        stack = CloudFormationStack.from_name(stack_name)
         template_body = stack.load_template()
         parameters = stack.prepare_parameters(config)
         response = cf_method(
@@ -230,7 +230,7 @@ def cloudformation():
 
 
 @cloudformation.command()
-@click.argument("stack", type=click.Choice(Stack.list_stacks()))
+@click.argument("stack", type=click.Choice(CloudFormationStack.list_stacks()))
 @click.argument("config", type=click.File('r'))
 def create(stack, config):
     """Create a new stack, specified by the given config file."""
@@ -238,7 +238,7 @@ def create(stack, config):
 
 
 @cloudformation.command()
-@click.argument("stack", type=click.Choice(Stack.list_stacks()))
+@click.argument("stack", type=click.Choice(CloudFormationStack.list_stacks()))
 @click.argument("config", type=click.File('r'))
 def update(stack, config):
     """Update the named stack with the given config file."""
@@ -246,7 +246,7 @@ def update(stack, config):
 
 
 @cloudformation.command()
-@click.argument("stack", type=click.Choice(Stack.list_stacks()))
+@click.argument("stack", type=click.Choice(CloudFormationStack.list_stacks()))
 @click.argument("config", type=click.File('r'))
 def delete(stack, config):
     """Delete the given stack."""
