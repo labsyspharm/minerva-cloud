@@ -86,7 +86,7 @@ class Stack:
 class Common(Stack):
     @classmethod
     def prepare_parameters(cls, config):
-        parameters = super(Common, cls).prepare_parameters()
+        parameters = super(Common, cls).prepare_parameters(config)
         parameters += cls.string_configs_to_parameters(config, [
             'VpcId',
             'DatabasePassword',
@@ -105,7 +105,7 @@ class Cognito(Stack):
 class Batch(Stack):
     @classmethod
     def prepare_parameters(cls, config):
-        parameters = super(Batch, cls).prepare_parameters()
+        parameters = super(Batch, cls).prepare_parameters(config)
         parameters += cls.string_configs_to_parameters(config, [
             'BatchAMI',
             'BatchClusterEC2MinCpus',
@@ -124,7 +124,7 @@ class Batch(Stack):
 class Cache(Stack):
     @classmethod
     def prepare_parameters(cls, config):
-        parameters = super(Cache, cls).prepare_parameters()
+        parameters = super(Cache, cls).prepare_parameters(config)
         return parameters + cls.string_configs_to_parameters(config, [
             'DefaultSecurityGroup',
             'CacheNodeType',
