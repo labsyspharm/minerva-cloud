@@ -69,6 +69,11 @@ class Stack:
         return os.path.join(os.path.dirname(__file__), f'{cls.name()}.yml')
 
     @classmethod
+    def load_template(cls):
+        with open(cls.get_template_path(), 'r') as f:
+            return f.read()
+
+    @classmethod
     def prepare_parameters(cls, config):
         parameters = cls.string_configs_to_parameters(config, [
             'StackPrefix',
@@ -159,9 +164,7 @@ def operate_on_stack(operation, stack_name, config):
     # Trigger the operation
     if operation in ['create', 'update']:
         stack = Stack.from_name(stack_name)
-        template_path = stack.get_template_path()
-        with open(template_path, 'r') as f:
-            template_body = f.read()
+        template_body = stack.load_template()
         parameters = stack.prepare_parameters(config)
         response = cf_method(
             StackName=cf_name,
