@@ -136,21 +136,15 @@ class Author(CloudFormationStack):
     pass
 
 
-def operate_on_stack(operation, stack_name, config):
+def operate_on_stack(cf, operation, stack_name, config):
     # Load the configuration file
     config = load_config(config)
 
     # Get config parameters needed to configure the operation itself
-    region = config['Region']
     prefix = config['StackPrefix']
     project_tag = config['ProjectTag']
-    aws_profile = config['Profile']
-    if aws_profile == 'default':
-        aws_profile = None
 
     # Select the appropriate cloudformation operation
-    session = boto3.Session(profile_name=aws_profile)
-    cf = session.client('cloudformation', region_name=region)
     cf_methods = {
         'create': cf.create_stack,
         'update': cf.update_stack,
@@ -229,12 +223,22 @@ def cloudformation():
     """Create, Update, and Delete the Minerva stacks via cloudformation."""
 
 
+def _get_cf(config):
+    region = config['Region']
+    aws_profile = config['Profile']
+    if aws_profile == 'default':
+        aws_profile = None
+    session = boto3.Session(profile_name=aws_profile)
+    return session.client('cloudformation', region_name=region)
+
+
 @cloudformation.command()
 @click.argument("stack", type=click.Choice(CloudFormationStack.list_stacks()))
 @click.argument("config", type=click.File('r'))
 def create(stack, config):
     """Create a new stack, specified by the given config file."""
-    operate_on_stack("create", stack, config)
+    cf = _get_cf(config)
+    operate_on_stack(cf, "create", stack, config)
 
 
 @cloudformation.command()
@@ -242,7 +246,8 @@ def create(stack, config):
 @click.argument("config", type=click.File('r'))
 def update(stack, config):
     """Update the named stack with the given config file."""
-    operate_on_stack("update", stack, config)
+    cf = _get_cf(config)
+    operate_on_stack(cf, "update", stack, config)
 
 
 @cloudformation.command()
@@ -250,4 +255,5 @@ def update(stack, config):
 @click.argument("config", type=click.File('r'))
 def delete(stack, config):
     """Delete the given stack."""
-    operate_on_stack("delete", stack, config)
+    cf = _get_cf(config)
+    operate_on_stack(cf, "delete", stack, config)
