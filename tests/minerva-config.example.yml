@@ -6,11 +6,11 @@ Stage: dev
 # AWS Profile
 Profile: default
 # Tag for billing etc.
-ProjectTag: myproject
+ProjectTag: test
 # Bucket that serverless will use as a staging area for deployment
-DeploymentBucket: bucket-name
+DeploymentBucket: serverless-bucket
 # VPC ID
-VpcId: vpc-12345678
+VpcId: {{ vpc_id }}
 # ECS optimised AMI upon which to build the BatchAMI. This is region specific
 # and updated periodically by Amazon
 # https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
@@ -20,16 +20,16 @@ BatchAMI: ami-12345678
 # SSH Key Name to use for any instances
 SSHKeyName: ec2_ssh_id
 # SSH Security Group to use for an instances
-DefaultSecurityGroup: sg-12345678
+DefaultSecurityGroup: {{ default_sg }}
 # SSH Security Group to use for an instances
-SSHSecurityGroup: sg-87654321
+SSHSecurityGroup: {{ ssh_sg }}
 # Use existing subnets
 SubnetsPublic:
-  - subnet-12345678
-  - subnet-23456789
+  - {{ public_subnet_1 }}
+  - {{ public_subnet_2 }}
 SubnetsPrivate:
-  - subnet-34567890
-  - subnet-45678901
+  - {{ private_subnet_1 }}
+  - {{ private_subnet_2 }}
 # Batch compute environments
 BatchClusterEC2MinCpus: 0
 BatchClusterEC2MaxCpus: 4

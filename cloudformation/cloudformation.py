@@ -223,37 +223,38 @@ def cloudformation():
     """Create, Update, and Delete the Minerva stacks via cloudformation."""
 
 
-def _get_cf(config):
-    region = config['Region']
-    aws_profile = config['Profile']
-    if aws_profile == 'default':
-        aws_profile = None
-    session = boto3.Session(profile_name=aws_profile)
-    return session.client('cloudformation', region_name=region)
+def _do_cf_command(action, stack, config_path):
+    with open(config_path, "r") as config:
+        config_dict = load_config(config)
+        config.seek(0)
+        region = config_dict["Region"]
+        aws_profile = config_dict["Profile"]
+        if aws_profile == "default":
+            aws_profile = None
+        session = boto3.Session(profile_name=aws_profile)
+        cf = session.client("cloudformation", region_name=region)
+        operate_on_stack(cf, action, stack, config)
 
 
 @cloudformation.command()
 @click.argument("stack", type=click.Choice(CloudFormationStack.list_stacks()))
-@click.argument("config", type=click.File('r'))
-def create(stack, config):
+@click.argument("config_path", type=str)
+def create(stack, config_path):
     """Create a new stack, specified by the given config file."""
-    cf = _get_cf(config)
-    operate_on_stack(cf, "create", stack, config)
+    _do_cf_command("create", stack, config_path)
 
 
 @cloudformation.command()
 @click.argument("stack", type=click.Choice(CloudFormationStack.list_stacks()))
-@click.argument("config", type=click.File('r'))
-def update(stack, config):
+@click.argument("config_path", type=str)
+def update(stack, config_path):
     """Update the named stack with the given config file."""
-    cf = _get_cf(config)
-    operate_on_stack(cf, "update", stack, config)
+    _do_cf_command("update", stack, config_path)
 
 
 @cloudformation.command()
 @click.argument("stack", type=click.Choice(CloudFormationStack.list_stacks()))
-@click.argument("config", type=click.File('r'))
-def delete(stack, config):
+@click.argument("config_path", type=str)
+def delete(stack, config_path):
     """Delete the given stack."""
-    cf = _get_cf(config)
-    operate_on_stack(cf, "delete", stack, config)
+    _do_cf_command("delete", stack, config_path)
