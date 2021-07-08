@@ -110,4 +110,5 @@ def test_create_common_stack(s3, efs, ec2, rds, cf, minerva_config):
 
     file_systems = efs.describe_file_systems()
     assert len(file_systems['FileSystems']) == 1
-    assert True
+    fs_info = file_systems['FileSystems'][0]
+    assert fs_info['NumberOfMountTargets'] == 2
