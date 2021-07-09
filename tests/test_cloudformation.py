@@ -106,9 +106,42 @@ def test_create_common_stack(s3, efs, ec2, rds, cf, minerva_config):
 
     # Test for the RDS instance.
     rds_instances = rds.describe_db_instances()
-    assert [dbi['DBInstanceIdentifier'] for dbi in rds_instances['DBInstances']] == ['minerva-test-dev-database']
+    assert [dbi['DBInstanceIdentifier'] for dbi in rds_instances['DBInstances']] \
+           == ['minerva-test-dev-database']
 
+    # Test for the EFS volumes
     file_systems = efs.describe_file_systems()
     assert len(file_systems['FileSystems']) == 1
     fs_info = file_systems['FileSystems'][0]
     assert fs_info['NumberOfMountTargets'] == 2
+
+    # Test for the mount targets
+    mount_targets = efs.describe_mount_targets(FileSystemId=fs_info['FileSystemId'])
+    assert len(mount_targets['MountTargets']) == 2
+
+
+def test_delete_common_stack(s3, efs, ec2, rds, cf, minerva_config):
+    # Run the create procedures.
+    operate_on_stack(cf, 'create', 'common', minerva_config)
+
+    # Run the delete procedures.
+    operate_on_stack(cf, 'delete', 'common', minerva_config)
+
+    # Test for s3 buckets.
+    buckets = s3.list_buckets()
+    _validate_resource_names("s3 buckets", [],
+                             [b["Name"] for b in buckets["Buckets"]])
+
+    # Test for security groups
+    security_groups = ec2.describe_security_groups()
+    _validate_resource_names("security groups", [],
+                             [sg['GroupName']
+                              for sg in security_groups['SecurityGroups']])
+
+    # Test for the RDS instance.
+    rds_instances = rds.describe_db_instances()
+    assert [dbi['DBInstanceIdentifier'] for dbi in rds_instances['DBInstances']] == []
+
+    # Test for the EFS volumes
+    file_systems = efs.describe_file_systems()
+    assert len(file_systems['FileSystems']) == 0
