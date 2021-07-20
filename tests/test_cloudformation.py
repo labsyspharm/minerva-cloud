@@ -52,15 +52,19 @@ def rds(aws_credentials):
 @pytest.fixture(scope='function')
 def ec2(aws_credentials):
     with moto.mock_ec2():
-        ec2 = boto3.client('ec2', region_name='us-east-1')
-        yield ec2
+        yield boto3.client('ec2', region_name='us-east-1')
 
 
 @pytest.fixture(scope='function')
 def ssm(aws_credentials):
     with moto.mock_ssm():
-        ssm = boto3.client('ssm', region_name='us-east-1')
-        yield ssm
+        yield boto3.client('ssm', region_name='us-east-1')
+
+
+@pytest.fixture(scope='function')
+def iam(aws_credentials):
+    with moto.mock_iam():
+        yield boto3.client('iam', region_name='us-east-1')
 
 
 @pytest.fixture(scope='function')
@@ -106,7 +110,7 @@ def test_stack_templates():
         assert path.abspath(config_fpath) == config_fpath
 
 
-def test_create_common_stack(s3, efs, ec2, rds, cf, minerva_config):
+def test_create_common_stack(s3, efs, ec2, rds, cf, iam, minerva_config):
     operate_on_stack(cf, 'create', 'common', minerva_config)
 
     # Test for s3 buckets.
@@ -136,7 +140,7 @@ def test_create_common_stack(s3, efs, ec2, rds, cf, minerva_config):
     assert len(mount_targets['MountTargets']) == 2
 
 
-def test_create_author_stack(cf, s3, ssm, minerva_config):
+def test_create_author_stack(s3, efs, ec2, rds, cf, iam, minerva_config):
     # Create the author stack.
     operate_on_stack(cf, 'create', 'common', minerva_config)
     operate_on_stack(cf, 'create', 'author', minerva_config)
