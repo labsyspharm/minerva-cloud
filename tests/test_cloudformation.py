@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import moto
 import boto3
 import pytest
@@ -8,7 +10,11 @@ from jinja2 import Template
 from cloudformation.cloudformation import CloudFormationStack, operate_on_stack
 
 
-RESOURCE_BASE_NAME_COMMON ='minerva-test-cf-common-'
+RESOURCE_BASE_NAME ='minerva-test-cf'
+
+def _matches_resource_name(stack, resource, actual_name):
+    prefix = '-'.join([RESOURCE_BASE_NAME, stack, resource])
+    return actual_name.startswith(prefix)
 
 
 @pytest.fixture(scope='function')
@@ -51,6 +57,13 @@ def ec2(aws_credentials):
 
 
 @pytest.fixture(scope='function')
+def ssm(aws_credentials):
+    with moto.mock_ssm():
+        ssm = boto3.client('ssm', region_name='us-east-1')
+        yield ssm
+
+
+@pytest.fixture(scope='function')
 def minerva_config(cf, s3, ec2):
     with open('minerva-config.example.yml', 'r') as f:
         template = Template(f.read())
@@ -72,11 +85,14 @@ def minerva_config(cf, s3, ec2):
 
 
 def _validate_resource_names(resource, expected_names, actual_names):
-    expected_names = expected_names[:]
     for actual_name in actual_names:
-        for name in expected_names:
-            if actual_name.startswith(RESOURCE_BASE_NAME_COMMON + name):
-                expected_names.remove(name)
+        for stack in expected_names.keys():
+            for name in expected_names[stack]:
+                if _matches_resource_name(stack, name, actual_name):
+                    expected_names[stack].remove(name)
+                    break
+            if not expected_names[stack]:
+                expected_names.pop(stack)
                 break
     assert not expected_names, f"Not all {resource} created."
 
@@ -95,12 +111,12 @@ def test_create_common_stack(s3, efs, ec2, rds, cf, minerva_config):
 
     # Test for s3 buckets.
     buckets = s3.list_buckets()
-    _validate_resource_names("s3 buckets", ['rawbucket', 'tilebucket'],
+    _validate_resource_names("s3 buckets", {'common': ['rawbucket', 'tilebucket']},
                              [b["Name"] for b in buckets["Buckets"]])
 
     # Test for security groups
     security_groups = ec2.describe_security_groups()
-    _validate_resource_names("security groups", ['GeneralSG'],
+    _validate_resource_names("security groups", {'common': ['GeneralSG']},
                              [sg['GroupName']
                               for sg in security_groups['SecurityGroups']])
 
@@ -118,3 +134,17 @@ def test_create_common_stack(s3, efs, ec2, rds, cf, minerva_config):
     # Test for the mount targets
     mount_targets = efs.describe_mount_targets(FileSystemId=fs_info['FileSystemId'])
     assert len(mount_targets['MountTargets']) == 2
+
+
+def test_create_author_stack(cf, s3, ssm, minerva_config):
+    # Create the author stack.
+    operate_on_stack(cf, 'create', 'common', minerva_config)
+    operate_on_stack(cf, 'create', 'author', minerva_config)
+
+    # Check that everything was built correctly.
+    buckets = s3.list_buckets()
+    _validate_resource_names("s3 buckets", {'common': ['rawbucket', 'tilebucket'],
+                                            'author': ['storybucket',
+                                                       'minervastorybasebucket',
+                                                       'publishedbucket']},
+                             [b["Name"] for b in buckets["Buckets"]])
