@@ -30,6 +30,7 @@ you run
 ```
 git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
+See [Black docs](https://black.readthedocs.io/en/stable/guides/introducing_black_to_your_project.html?highlight=git%20blame#avoiding-ruining-git-blame) for more information. 
 
 ## AWS Profile
 
