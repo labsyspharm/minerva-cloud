@@ -1,18 +1,18 @@
-import moto
-from os import path
-from click.testing import CliRunner
+from ruamel.yaml import YAML
 
-from cloudformation.cloudformation import create
+from cloudformation.cloudformation import operate_on_stack
 from ami_builder.build import build_ami
 
+from .fixtures import *  # noqa
 
-@moto.mock_ec2
-@moto.mock_ssm
-@moto.mock_cloudformation
-def test_ami_build():
-    config_test_path = path.join(path.dirname(__file__),
-                                 'minerva-config.example.yml')
-    runner = CliRunner()
-    runner.invoke(create, ['test-stack', config_test_path])
-    result = runner.invoke(build_ami, [config_test_path])
-    assert result.exit_code == 0, result
+
+yaml = YAML()
+
+
+def test_ami_build(cf, ssm, efs, ec2, minerva_config):
+    # Create the common stack
+    operate_on_stack(cf, "create", "common", minerva_config)
+
+    # Test the runner
+    config_json = yaml.load(minerva_config)
+    build_ami(config_json)
