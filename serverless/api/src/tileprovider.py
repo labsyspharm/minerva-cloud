@@ -14,7 +14,14 @@ logger = logging.getLogger("minerva")
 
 # Tile provider which loads tiles from a S3 bucket
 class S3TileProvider:
-    def __init__(self, tile_bucket, missing_tile_callback=None, cache_client=None, tile_size=1024, region="us-east-1"):
+    def __init__(
+        self,
+        tile_bucket,
+        missing_tile_callback=None,
+        cache_client=None,
+        tile_size=1024,
+        region="us-east-1",
+    ):
         self.bucket = tile_bucket
         self.missing_tile_callback = missing_tile_callback
         self.cache_client = cache_client
@@ -22,12 +29,12 @@ class S3TileProvider:
         self.region = region
 
     def get_tile(self, uuid, x, y, z, t, c, level, format="tiff"):
-        '''Fetch a specific tile from S3 and decode'''
+        """Fetch a specific tile from S3 and decode"""
 
         start = time.time()
         # Use the indices to build the key
         file_ext = ".tif" if format == "tiff" else f".{format}"
-        key = f'{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}{file_ext}'
+        key = f"{uuid}/C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}{file_ext}"
 
         try:
             image = self._get_cached_object(key)
@@ -55,7 +62,10 @@ class S3TileProvider:
             logger.error(e)
             logger.info("%s - Fetch COMPLETE %s ms", key, str(t))
             sys.stdout.flush()
-            if e.response['Error']['Code'] == 'NoSuchKey' and self.missing_tile_callback is not None:
+            if (
+                e.response["Error"]["Code"] == "NoSuchKey"
+                and self.missing_tile_callback is not None
+            ):
                 self.missing_tile_callback(uuid, x, y, z, t, c, level)
             else:
                 raise e
@@ -78,18 +88,23 @@ class S3TileProvider:
             logger.debug("Put cache END")
 
     def _s3_get(self, key):
-        obj = boto3.resource('s3').Object(self.bucket, key)
-        body = obj.get()['Body']
+        obj = boto3.resource("s3").Object(self.bucket, key)
+        body = obj.get()["Body"]
         return body.read()
 
     def _zarr_get(self, uuid, x, y, z, t, c, level):
         s3 = s3fs.S3FileSystem(client_kwargs=dict(region_name=self.region))
-        s3_store = s3fs.S3Map(root=f'{self.bucket}/{uuid}', s3=s3, check=False)
+        s3_store = s3fs.S3Map(root=f"{self.bucket}/{uuid}", s3=s3, check=False)
         group = zarr.hierarchy.open_group(store=s3_store)
         level = group.get(str(level))
-        return level[t, c, z,
-                     y*self.tile_size:(y+1)*self.tile_size,
-                     x*self.tile_size:(x+1)*self.tile_size]
+        return level[
+            t,
+            c,
+            z,
+            y * self.tile_size : (y + 1) * self.tile_size,
+            x * self.tile_size : (x + 1) * self.tile_size,
+        ]
+
 
 # Example of a tile provider which loads the tiles from file system (e.g. local hard drive or NFS)
 class FSTileProvider:
@@ -99,10 +114,10 @@ class FSTileProvider:
 
     def get_tile(self, uuid, x, y, z, t, c, level, format="tiff"):
         file_ext = ".tif" if format == "tiff" else f".{format}"
-        filename = f'C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}{file_ext}'
+        filename = f"C{c}-T{t}-Z{z}-L{level}-Y{y}-X{x}{file_ext}"
         path = os.path.join(self.base_dir, uuid, filename)
         logger.debug("Opening path: %s", path)
-        with open(path, mode='rb') as file:
+        with open(path, mode="rb") as file:
             data = file.read()
             stream = BytesIO(data)
             if format == "tiff":

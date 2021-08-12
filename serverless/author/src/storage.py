@@ -2,13 +2,14 @@ import boto3
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-s3 = boto3.client('s3')
+s3 = boto3.client("s3")
+
 
 def _create_key(story_uuid):
     return f"{str(story_uuid)}/story.json"
 
-class AuthorS3Storage:
 
+class AuthorS3Storage:
     def __init__(self, bucket):
         self.bucket = bucket
 
@@ -18,14 +19,12 @@ class AuthorS3Storage:
 
     def list_stories(self):
         res = s3.list_objects(Bucket=self.bucket)
-        stories = {
-            "stories": []
-        }
+        stories = {"stories": []}
         if "Contents" not in res:
             return stories
 
         executor = ThreadPoolExecutor(max_workers=10)
-        for item in res['Contents']:
+        for item in res["Contents"]:
             story_uuid = item["Key"].split("/")[0]
             executor.submit(self._get_story_summary, story_uuid, stories)
 
@@ -41,12 +40,12 @@ class AuthorS3Storage:
             "last_updated": story["last_updated"],
             "image_name": story["image_name"],
             "author_name": story.get("author_name", ""),
-            "author_uuid": story.get("author_uuid", "")
+            "author_uuid": story.get("author_uuid", ""),
         }
         stories["stories"].append(summary)
 
     def get_story(self, story_uuid):
         key = _create_key(story_uuid)
         data = s3.get_object(Bucket=self.bucket, Key=key)
-        story_dict = json.loads(data['Body'].read().decode('utf-8'))
+        story_dict = json.loads(data["Body"].read().decode("utf-8"))
         return story_dict

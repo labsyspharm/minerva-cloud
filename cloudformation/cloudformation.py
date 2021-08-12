@@ -13,22 +13,19 @@ def load_config(config):
     try:
         parsed_config = yaml.load(config)
 
-        if len(parsed_config['SubnetsPublic']) != 2:
-            print('Exactly 2 public subnets required')
+        if len(parsed_config["SubnetsPublic"]) != 2:
+            print("Exactly 2 public subnets required")
             sys.exit(1)
         return parsed_config
 
     except Exception as e:
-        print('Error reading configuration YAML: {}'.format(e))
+        print("Error reading configuration YAML: {}".format(e))
         sys.exit(1)
 
 
 def make_parameter(key, value):
 
-    return {
-        'ParameterKey': key,
-        'ParameterValue': value
-    }
+    return {"ParameterKey": key, "ParameterValue": value}
 
 
 class BuildFailure(Exception):
@@ -39,7 +36,7 @@ class BuildFailure(Exception):
             if "FAILED" in event["ResourceStatus"]:
                 lines.append(event["ResourceStatus"])
                 lines.append(event["ResourceStatusReason"])
-        failure_log = '\n'.join(lines)
+        failure_log = "\n".join(lines)
         msg = f"Failed to build stack:\n{failure_log}"
         super(BuildFailure, self).__init__(msg)
 
@@ -50,7 +47,7 @@ class CloudFormationStack:
         for s in cls.__subclasses__():
             if s.name() == name:
                 return s
-        raise ValueError(f"Invalid stack name: \"{name}\".")
+        raise ValueError(f'Invalid stack name: "{name}".')
 
     @classmethod
     def list_stacks(cls):
@@ -66,20 +63,18 @@ class CloudFormationStack:
 
     @classmethod
     def get_template_path(cls):
-        return os.path.join(os.path.dirname(__file__), f'{cls.name()}.yml')
+        return os.path.join(os.path.dirname(__file__), f"{cls.name()}.yml")
 
     @classmethod
     def load_template(cls):
-        with open(cls.get_template_path(), 'r') as f:
+        with open(cls.get_template_path(), "r") as f:
             return f.read()
 
     @classmethod
     def prepare_parameters(cls, config):
-        parameters = cls.string_configs_to_parameters(config, [
-            'StackPrefix',
-            'Stage',
-            'ProjectTag'
-        ])
+        parameters = cls.string_configs_to_parameters(
+            config, ["StackPrefix", "Stage", "ProjectTag"]
+        )
         return parameters
 
 
@@ -87,14 +82,13 @@ class Common(CloudFormationStack):
     @classmethod
     def prepare_parameters(cls, config):
         parameters = super(Common, cls).prepare_parameters(config)
-        parameters += cls.string_configs_to_parameters(config, [
-            'VpcId',
-            'DatabasePassword',
-            'EnableRenderedCache',
-            'EnableRawCache'
-        ])
-        parameters.append(make_parameter('SubnetsPublic',
-                                         ','.join(config['SubnetsPublic'])))
+        parameters += cls.string_configs_to_parameters(
+            config,
+            ["VpcId", "DatabasePassword", "EnableRenderedCache", "EnableRawCache"],
+        )
+        parameters.append(
+            make_parameter("SubnetsPublic", ",".join(config["SubnetsPublic"]))
+        )
         return parameters
 
 
@@ -106,18 +100,22 @@ class Batch(CloudFormationStack):
     @classmethod
     def prepare_parameters(cls, config):
         parameters = super(Batch, cls).prepare_parameters(config)
-        parameters += cls.string_configs_to_parameters(config, [
-            'BatchAMI',
-            'BatchClusterEC2MinCpus',
-            'BatchClusterEC2MaxCpus',
-            'BatchClusterEC2DesiredCpus',
-            'BatchClusterSpotMinCpus',
-            'BatchClusterSpotMaxCpus',
-            'BatchClusterSpotDesiredCpus',
-            'BatchClusterSpotBidPercentage'
-        ])
-        parameters.append(make_parameter('SubnetsPublic',
-                                         ','.join(config['SubnetsPublic'])))
+        parameters += cls.string_configs_to_parameters(
+            config,
+            [
+                "BatchAMI",
+                "BatchClusterEC2MinCpus",
+                "BatchClusterEC2MaxCpus",
+                "BatchClusterEC2DesiredCpus",
+                "BatchClusterSpotMinCpus",
+                "BatchClusterSpotMaxCpus",
+                "BatchClusterSpotDesiredCpus",
+                "BatchClusterSpotBidPercentage",
+            ],
+        )
+        parameters.append(
+            make_parameter("SubnetsPublic", ",".join(config["SubnetsPublic"]))
+        )
         return parameters
 
 
@@ -125,11 +123,9 @@ class Cache(CloudFormationStack):
     @classmethod
     def prepare_parameters(cls, config):
         parameters = super(Cache, cls).prepare_parameters(config)
-        return parameters + cls.string_configs_to_parameters(config, [
-            'DefaultSecurityGroup',
-            'CacheNodeType',
-            'RawCacheNodeType'
-        ])
+        return parameters + cls.string_configs_to_parameters(
+            config, ["DefaultSecurityGroup", "CacheNodeType", "RawCacheNodeType"]
+        )
 
 
 class Author(CloudFormationStack):
@@ -141,22 +137,22 @@ def operate_on_stack(cf, operation, stack_name, config):
     config = load_config(config)
 
     # Get config parameters needed to configure the operation itself
-    prefix = config['StackPrefix']
-    project_tag = config['ProjectTag']
+    prefix = config["StackPrefix"]
+    project_tag = config["ProjectTag"]
 
     # Select the appropriate cloudformation operation
     cf_methods = {
-        'create': cf.create_stack,
-        'update': cf.update_stack,
-        'delete': cf.delete_stack
+        "create": cf.create_stack,
+        "update": cf.update_stack,
+        "delete": cf.delete_stack,
     }
     cf_method = cf_methods[operation]
 
     # Build a prefixed name for this stack
-    cf_name = f'{prefix}-cf-{stack_name}'
+    cf_name = f"{prefix}-cf-{stack_name}"
 
     # Trigger the operation
-    if operation in ['create', 'update']:
+    if operation in ["create", "update"]:
         stack = CloudFormationStack.from_name(stack_name)
         template_body = stack.load_template()
         parameters = stack.prepare_parameters(config)
@@ -165,46 +161,41 @@ def operate_on_stack(cf, operation, stack_name, config):
             TemplateBody=template_body,
             Parameters=parameters,
             Capabilities=[
-                'CAPABILITY_NAMED_IAM',
+                "CAPABILITY_NAMED_IAM",
             ],
-            Tags=[{
-                'Key': 'project',
-                'Value': project_tag
-            }]
+            Tags=[{"Key": "project", "Value": project_tag}],
         )
-    elif operation == 'delete':
-        response = cf_method(
-            StackName=cf_name
-        )
+    elif operation == "delete":
+        response = cf_method(StackName=cf_name)
     else:
-        raise ValueError(f"Invalid operation: \"{operation}\".")
+        raise ValueError(f'Invalid operation: "{operation}".')
 
     print(response)
 
-    if 'StackId' in response:
-        stack_id = response['StackId']
-        print(f'Stack {stack_name} {operation} completed: {stack_id}')
+    if "StackId" in response:
+        stack_id = response["StackId"]
+        print(f"Stack {stack_name} {operation} completed: {stack_id}")
         poll_progress = True
     else:
         stack_id = None
         poll_progress = False
 
     status = ""
-    print('Waiting for stack update to complete')
+    print("Waiting for stack update to complete")
     rollback = False
     while poll_progress:
-        sys.stdout.write('-')
+        sys.stdout.write("-")
         time.sleep(2)
         response = cf.describe_stacks(StackName=stack_id)
 
-        for stack_name in response['Stacks']:
-            if stack_name['StackId'] == stack_id:
-                if stack_name['StackStatus'] != status:
-                    status = stack_name['StackStatus']
-                    sys.stdout.write('>' + status)
-                    poll_progress = 'IN_PROGRESS' in status
+        for stack_name in response["Stacks"]:
+            if stack_name["StackId"] == stack_id:
+                if stack_name["StackStatus"] != status:
+                    status = stack_name["StackStatus"]
+                    sys.stdout.write(">" + status)
+                    poll_progress = "IN_PROGRESS" in status
 
-                if 'ROLLBACK' in stack_name['StackStatus']:
+                if "ROLLBACK" in stack_name["StackStatus"]:
                     rollback = True
 
         sys.stdout.flush()

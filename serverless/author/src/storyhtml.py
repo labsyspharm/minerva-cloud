@@ -1,5 +1,6 @@
 from datetime import datetime
 
+
 def create_story_html(exhibit_json, minerva_browser_url):
     last_modified = datetime.now().isoformat()
     return f"""<html>

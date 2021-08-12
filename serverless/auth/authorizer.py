@@ -22,68 +22,70 @@ import urllib.request
 from jose import jwk, jwt
 from jose.utils import base64url_decode
 
-REGION = os.environ['AWS_REGION']
-STACK_PREFIX = os.environ['STACK_PREFIX']
-STAGE = os.environ['STAGE']
+REGION = os.environ["AWS_REGION"]
+STACK_PREFIX = os.environ["STACK_PREFIX"]
+STAGE = os.environ["STAGE"]
 
-ssm = boto3.client('ssm')
+ssm = boto3.client("ssm")
 parameters_response = ssm.get_parameters(
-    Names=[
-        '/{}/{}/common/CognitoUserPoolARN'.format(STACK_PREFIX, STAGE)
-    ]
+    Names=["/{}/{}/common/CognitoUserPoolARN".format(STACK_PREFIX, STAGE)]
 )
 
+
 def get_value(name):
-    for p in parameters_response['Parameters']:
-        if p['Name'].endswith(name):
-            return p['Value']
-    raise ValueError('Value not found for Parameter ' + name)
+    for p in parameters_response["Parameters"]:
+        if p["Name"].endswith(name):
+            return p["Value"]
+    raise ValueError("Value not found for Parameter " + name)
 
 
-userpool_arn = get_value('CognitoUserPoolARN')
-userpool_id = userpool_arn.split('/')[-1]
-#app_client_id = '<ENTER APP CLIENT ID HERE>'
-keys_url = 'https://cognito-idp.{}.amazonaws.com/{}/.well-known/jwks.json'.format(REGION, userpool_id)
+userpool_arn = get_value("CognitoUserPoolARN")
+userpool_id = userpool_arn.split("/")[-1]
+# app_client_id = '<ENTER APP CLIENT ID HERE>'
+keys_url = "https://cognito-idp.{}.amazonaws.com/{}/.well-known/jwks.json".format(
+    REGION, userpool_id
+)
 # instead of re-downloading the public keys every time
 # we download them only on cold start
 # https://aws.amazon.com/blogs/compute/container-reuse-in-lambda/
 with urllib.request.urlopen(keys_url) as f:
     response = f.read()
-keys = json.loads(response.decode('utf-8'))['keys']
+keys = json.loads(response.decode("utf-8"))["keys"]
+
 
 def decode(token):
     bearer_prefix = "Bearer "
     if bearer_prefix in token:
-        token = token[len(bearer_prefix):]
+        token = token[len(bearer_prefix) :]
     # get the kid from the headers prior to verification
     headers = jwt.get_unverified_headers(token)
-    kid = headers['kid']
+    kid = headers["kid"]
     # search for the kid in the downloaded public keys
     key_index = -1
     for i in range(len(keys)):
-        if kid == keys[i]['kid']:
+        if kid == keys[i]["kid"]:
             key_index = i
             break
     if key_index == -1:
-        raise ValueError('Public key not found in jwks.json')
+        raise ValueError("Public key not found in jwks.json")
     # construct the public key
     public_key = jwk.construct(keys[key_index])
     # get the last two sections of the token,
     # message and signature (encoded in base64)
-    message, encoded_signature = str(token).rsplit('.', 1)
+    message, encoded_signature = str(token).rsplit(".", 1)
     # decode the signature
-    decoded_signature = base64url_decode(encoded_signature.encode('utf-8'))
+    decoded_signature = base64url_decode(encoded_signature.encode("utf-8"))
     # verify the signature
     if not public_key.verify(message.encode("utf8"), decoded_signature):
-        raise ValueError('Signature verification failed')
+        raise ValueError("Signature verification failed")
     # since we passed the verification, we can now safely
     # use the unverified claims
     claims = jwt.get_unverified_claims(token)
     # additionally we can verify the token expiration
-    if time.time() > claims['exp']:
-        raise ValueError('Token is expired')
+    if time.time() > claims["exp"]:
+        raise ValueError("Token is expired")
     # and the Audience  (use claims['client_id'] if verifying an access token)
-    #if claims['aud'] != app_client_id:
+    # if claims['aud'] != app_client_id:
     #    print('Token was not issued for this audience')
     #    return False
     # now we can use the claims
@@ -91,27 +93,26 @@ def decode(token):
 
 
 class Handler:
-
     def authorize_request(self, event, context):
         anonymous = False
         token = None
         if "authorizationToken" in event:
-            token = event['authorizationToken']
+            token = event["authorizationToken"]
 
-        if token == 'Anonymous' or token == 'Bearer Anonymous':
+        if token == "Anonymous" or token == "Bearer Anonymous":
             anonymous = True
-            principal_id = '00000000-0000-0000-0000-000000000000'
+            principal_id = "00000000-0000-0000-0000-000000000000"
         else:
             """validate the incoming token"""
             """and produce the principal user identifier associated with the token"""
             try:
                 res = decode(token)
                 if res is False:
-                    raise Exception('Unauthorized')
+                    raise Exception("Unauthorized")
 
-                principal_id = res['sub']
+                principal_id = res["sub"]
             except Exception as e:
-                raise ValueError('Unauthorized - Invalid token')
+                raise ValueError("Unauthorized - Invalid token")
 
         """if the token is valid, a policy must be generated which will allow or deny access to the client"""
 
@@ -125,8 +126,8 @@ class Handler:
         """and will apply to subsequent calls to any method/resource in the RestApi"""
         """made with the same token"""
 
-        tmp = event['methodArn'].split(':')
-        apiGatewayArnTmp = tmp[5].split('/')
+        tmp = event["methodArn"].split(":")
+        apiGatewayArnTmp = tmp[5].split("/")
         awsAccountId = tmp[4]
 
         policy = AuthPolicy(principal_id, awsAccountId)
@@ -151,22 +152,22 @@ class Handler:
         # additional context is cached
         context = {
             # APIGW will not accept arrays or maps, have to use a string
-            'anonymous': anonymous
+            "anonymous": anonymous
         }
-        response['context'] = context
+        response["context"] = context
         return response
 
     def test_authorization(self, event, context):
         print("Test authorization - auth success")
         print(event)
         return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Credentials': 'true'
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Credentials": "true",
             },
-            'body': json.dumps(event)
+            "body": json.dumps(event),
         }
 
 
@@ -217,40 +218,52 @@ class AuthPolicy(object):
         the internal list contains a resource ARN and a condition statement. The condition
         statement can be null."""
         if verb != "*" and not hasattr(HttpVerb, verb):
-            raise NameError("Invalid HTTP verb " + verb + ". Allowed verbs in HttpVerb class")
+            raise NameError(
+                "Invalid HTTP verb " + verb + ". Allowed verbs in HttpVerb class"
+            )
         resourcePattern = re.compile(self.pathRegex)
         if not resourcePattern.match(resource):
-            raise NameError("Invalid resource path: " + resource + ". Path should match " + self.pathRegex)
+            raise NameError(
+                "Invalid resource path: "
+                + resource
+                + ". Path should match "
+                + self.pathRegex
+            )
 
         if resource[:1] == "/":
             resource = resource[1:]
 
-        resourceArn = ("arn:aws:execute-api:" +
-                       self.region + ":" +
-                       self.awsAccountId + ":" +
-                       self.restApiId + "/" +
-                       self.stage + "/" +
-                       verb + "/" +
-                       resource)
+        resourceArn = (
+            "arn:aws:execute-api:"
+            + self.region
+            + ":"
+            + self.awsAccountId
+            + ":"
+            + self.restApiId
+            + "/"
+            + self.stage
+            + "/"
+            + verb
+            + "/"
+            + resource
+        )
 
         if effect.lower() == "allow":
-            self.allowMethods.append({
-                'resourceArn': resourceArn,
-                'conditions': conditions
-            })
+            self.allowMethods.append(
+                {"resourceArn": resourceArn, "conditions": conditions}
+            )
         elif effect.lower() == "deny":
-            self.denyMethods.append({
-                'resourceArn': resourceArn,
-                'conditions': conditions
-            })
+            self.denyMethods.append(
+                {"resourceArn": resourceArn, "conditions": conditions}
+            )
 
     def _getEmptyStatement(self, effect):
         """Returns an empty statement object prepopulated with the correct action and the
         desired effect."""
         statement = {
-            'Action': 'execute-api:Invoke',
-            'Effect': effect[:1].upper() + effect[1:].lower(),
-            'Resource': []
+            "Action": "execute-api:Invoke",
+            "Effect": effect[:1].upper() + effect[1:].lower(),
+            "Resource": [],
         }
 
         return statement
@@ -264,12 +277,12 @@ class AuthPolicy(object):
             statement = self._getEmptyStatement(effect)
 
             for curMethod in methods:
-                if curMethod['conditions'] is None or len(curMethod['conditions']) == 0:
-                    statement['Resource'].append(curMethod['resourceArn'])
+                if curMethod["conditions"] is None or len(curMethod["conditions"]) == 0:
+                    statement["Resource"].append(curMethod["resourceArn"])
                 else:
                     conditionalStatement = self._getEmptyStatement(effect)
-                    conditionalStatement['Resource'].append(curMethod['resourceArn'])
-                    conditionalStatement['Condition'] = curMethod['conditions']
+                    conditionalStatement["Resource"].append(curMethod["resourceArn"])
+                    conditionalStatement["Condition"] = curMethod["conditions"]
                     statements.append(conditionalStatement)
 
             statements.append(statement)
@@ -311,20 +324,22 @@ class AuthPolicy(object):
         conditions. This will generate a policy with two main statements for the effect:
         one statement for Allow and one statement for Deny.
         Methods that includes conditions will have their own statement in the policy."""
-        if ((self.allowMethods is None or len(self.allowMethods) == 0) and
-                (self.denyMethods is None or len(self.denyMethods) == 0)):
+        if (self.allowMethods is None or len(self.allowMethods) == 0) and (
+            self.denyMethods is None or len(self.denyMethods) == 0
+        ):
             raise NameError("No statements defined for the policy")
 
         policy = {
-            'principalId': self.principalId,
-            'policyDocument': {
-                'Version': self.version,
-                'Statement': []
-            }
+            "principalId": self.principalId,
+            "policyDocument": {"Version": self.version, "Statement": []},
         }
 
-        policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Allow", self.allowMethods))
-        policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Deny", self.denyMethods))
+        policy["policyDocument"]["Statement"].extend(
+            self._getStatementForEffect("Allow", self.allowMethods)
+        )
+        policy["policyDocument"]["Statement"].extend(
+            self._getStatementForEffect("Deny", self.denyMethods)
+        )
 
         return policy
 
