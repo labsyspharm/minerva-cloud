@@ -70,7 +70,6 @@ Resources:
               - "*"
             ExposedHeaders:
               - "ETag"
-          
 
   TileBucket:
     Type: AWS::S3::Bucket

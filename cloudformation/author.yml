@@ -87,9 +87,7 @@ Resources:
       Name: !Sub /${StackPrefix}/${Stage}/author/URLPublishedStoryARN
       Description: URL for the published stories
       Type: String
-      Value: !GetAtt
-        - PublishedBucket
-        - WebsiteURL
+      Value: !GetAtt PublishedBucket.WebsiteURL
 
   MinervaBrowserURL:
     Type: AWS::SSM::Parameter
