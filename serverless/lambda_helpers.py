@@ -11,7 +11,9 @@ class EventBuilder:
         }
 
     def cognito_user(self, user_uuid):
-        self.event["requestContext"]["authorizer"]["claims"]["cognito:username"] = user_uuid
+        self.event["requestContext"]["authorizer"]["claims"][
+            "cognito:username"
+        ] = user_uuid
         return self
 
     def body(self, body):

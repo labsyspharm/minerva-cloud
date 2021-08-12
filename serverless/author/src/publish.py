@@ -10,10 +10,16 @@ import time
 
 
 class StoryPublisher:
-    def __init__(self, bucket, get_image_lambda_name, render_tile_lambda_name, render_group_lambda_name):
+    def __init__(
+        self,
+        bucket,
+        get_image_lambda_name,
+        render_tile_lambda_name,
+        render_group_lambda_name,
+    ):
         self.bucket = bucket
-        self.lambda_client = boto3.client('lambda')
-        self.s3_client = boto3.client('s3')
+        self.lambda_client = boto3.client("lambda")
+        self.s3_client = boto3.client("s3")
         self.get_image_lambda_name = get_image_lambda_name
         self.render_tile_lambda_name = render_tile_lambda_name
         self.render_group_lambda_name = render_group_lambda_name
@@ -21,7 +27,9 @@ class StoryPublisher:
         self.image = None
 
     def publish(self, story, user_uuid, minerva_browser_url, render_images=True):
-        logging.info("Publishing story uuid=%s render_images=%s", story["uuid"], render_images)
+        logging.info(
+            "Publishing story uuid=%s render_images=%s", story["uuid"], render_images
+        )
         self._load_image(user_uuid, story["imageUuid"])
         self._create_story(story, minerva_browser_url)
         if render_images:
@@ -32,10 +40,12 @@ class StoryPublisher:
         if "Contents" not in res:
             return "unpublished"
 
-        res = self.s3_client.list_objects(Bucket=self.bucket, Prefix=f"{story_uuid}/log")
+        res = self.s3_client.list_objects(
+            Bucket=self.bucket, Prefix=f"{story_uuid}/log"
+        )
 
         if "Contents" in res:
-            for item in res['Contents']:
+            for item in res["Contents"]:
                 if "SUCCESS" in item["Key"]:
                     return "published"
                 if "FAILURE" in item["Key"]:
@@ -54,23 +64,22 @@ class StoryPublisher:
         img = {
             "width": self.metadata["pixels"]["SizeX"],
             "height": self.metadata["pixels"]["SizeY"],
-            "pyramid_levels": self.image["pyramid_levels"]
+            "pyramid_levels": self.image["pyramid_levels"],
         }
         story_json = json.dumps(convert_to_exhibit(story, img, self.bucket))
 
         html = create_story_html(story_json, minerva_browser_url)
 
         key = f"{story_uuid}/minerva-story/index.html"
-        self.s3_client.put_object(Body=html,
-                                  Bucket=self.bucket,
-                                  Key=key,
-                                  ContentType="text/html")
+        self.s3_client.put_object(
+            Body=html, Bucket=self.bucket, Key=key, ContentType="text/html"
+        )
 
         try:
             key = f"{story_uuid}/minerva-story/favicon.png"
-            self.s3_client.upload_file("images/favicon.png",
-                                       Bucket=self.bucket,
-                                       Key=key)
+            self.s3_client.upload_file(
+                "images/favicon.png", Bucket=self.bucket, Key=key
+            )
         except Exception as e:
             print(e)
 
@@ -81,12 +90,14 @@ class StoryPublisher:
             "width": self.metadata["pixels"]["SizeX"],
             "height": self.metadata["pixels"]["SizeY"],
             "pyramid_levels": self.image["pyramid_levels"],
-            "tile_size": self.image["tile_size"]
+            "tile_size": self.image["tile_size"],
         }
         # Maximum timeout for lambda is 15min. To prevent rendering from timeouting,
         # we execute each group in a separate lambda run.
         for group in story["groups"]:
-            self._start_render_lambda(group, img, user_uuid, story["sample_info"]["name"], story["uuid"])
+            self._start_render_lambda(
+                group, img, user_uuid, story["sample_info"]["name"], story["uuid"]
+            )
 
     def _start_render_lambda(self, group, img, user_uuid, sample_name, story_uuid):
         payload = {
@@ -94,12 +105,12 @@ class StoryPublisher:
             "image": img,
             "user_uuid": user_uuid,
             "sample_name": sample_name,
-            "story_uuid": story_uuid
+            "story_uuid": story_uuid,
         }
         res = self.lambda_client.invoke(
             FunctionName=self.render_group_lambda_name,
             InvocationType="Event",
-            Payload=json.dumps(payload)
+            Payload=json.dumps(payload),
         )
         if res["StatusCode"] not in [200, 202, 204]:
             print(res)
@@ -109,14 +120,19 @@ class StoryPublisher:
         start_time = time.time()
         num_tiles = 0
         channels = group["channels"]
-        channel_params = [f"{channel['id']},{channel['color']},{channel['min']},{channel['max']}" for channel in channels]
+        channel_params = [
+            f"{channel['id']},{channel['color']},{channel['min']},{channel['max']}"
+            for channel in channels
+        ]
         channel_params = "/".join(channel_params)
 
         group_label = group["label"]
-        channel_labels = [f"{channel['id']}__{channel['label']}" for channel in channels]
+        channel_labels = [
+            f"{channel['id']}__{channel['label']}" for channel in channels
+        ]
         channel_labels = "--".join(channel_labels)
         group_key = f"{group_label}_{channel_labels}"
-        group_key = group_key.replace(' ', '-')
+        group_key = group_key.replace(" ", "-")
 
         logging.info("Rendering channel group %s", group_key)
         tiles_x = math.ceil(image["width"] / image["tile_size"])
@@ -125,11 +141,7 @@ class StoryPublisher:
         executor = ThreadPoolExecutor(max_workers=15)
         pyramid = []
         for number in range(image["pyramid_levels"]):
-            pyramid.append({
-                "tiles_x": tiles_x,
-                "tiles_y": tiles_y,
-                "number": number
-            })
+            pyramid.append({"tiles_x": tiles_x, "tiles_y": tiles_y, "number": number})
             tiles_x = math.ceil(tiles_x / 2)
             tiles_y = math.ceil(tiles_y / 2)
 
@@ -140,19 +152,49 @@ class StoryPublisher:
             for x in range(level["tiles_x"]):
                 for y in range(level["tiles_y"]):
                     num_tiles += 1
-                    executor.submit(self._render_and_upload, user_uuid, image["uuid"], x, y, 0, 0, level["number"], channel_params, story_uuid, group_key, sample_name)
+                    executor.submit(
+                        self._render_and_upload,
+                        user_uuid,
+                        image["uuid"],
+                        x,
+                        y,
+                        0,
+                        0,
+                        level["number"],
+                        channel_params,
+                        story_uuid,
+                        group_key,
+                        sample_name,
+                    )
 
                     if context.get_remaining_time_in_millis() < 1000:
                         run_time = time.time() - start_time
-                        self._mark_group_success(False, story_uuid, group["label"], run_time, num_tiles)
+                        self._mark_group_success(
+                            False, story_uuid, group["label"], run_time, num_tiles
+                        )
 
         executor.shutdown()
         run_time = time.time() - start_time
         self._mark_group_success(True, story_uuid, group["label"], run_time, num_tiles)
 
-    def _render_and_upload(self, user_uuid, image_uuid, x, y, z, t, level, channel_params, story_uuid, group_label, sample_name):
+    def _render_and_upload(
+        self,
+        user_uuid,
+        image_uuid,
+        x,
+        y,
+        z,
+        t,
+        level,
+        channel_params,
+        story_uuid,
+        group_label,
+        sample_name,
+    ):
         logging.info("x=%s y=%s ", x, y)
-        tile_img = self._render_tile(user_uuid, image_uuid, x, y, z, t, level, channel_params)
+        tile_img = self._render_tile(
+            user_uuid, image_uuid, x, y, z, t, level, channel_params
+        )
         key = f"{story_uuid}/minerva-story/images/{sample_name}/{group_label}/{level}_{x}_{y}.jpg"
         self.s3_client.put_object(Body=tile_img, Bucket=self.bucket, Key=key)
 
@@ -163,29 +205,20 @@ class StoryPublisher:
             "group": group_name,
             "success": success,
             "duration": run_time,
-            "tiles": num_tiles
+            "tiles": num_tiles,
         }
         self.s3_client.put_object(Body=json.dumps(marker), Bucket=self.bucket, Key=key)
 
     def _get_image(self, user_uuid, image_uuid):
         payload = {
-            "pathParameters": {
-                "uuid": image_uuid
-            },
+            "pathParameters": {"uuid": image_uuid},
             "requestContext": {
-                "authorizer": {
-                    "claims": {
-                        "cognito:username": user_uuid
-                    }
-                }
+                "authorizer": {"claims": {"cognito:username": user_uuid}}
             },
-            "headers": {
-                "Accept": "image/jpeg"
-            }
+            "headers": {"Accept": "image/jpeg"},
         }
         res = self.lambda_client.invoke(
-            FunctionName=self.get_image_lambda_name,
-            Payload=json.dumps(payload)
+            FunctionName=self.get_image_lambda_name, Payload=json.dumps(payload)
         )
         data = json.loads(res["Payload"].read())
         body = json.loads(data["body"])
@@ -200,23 +233,16 @@ class StoryPublisher:
                 "z": z,
                 "t": t,
                 "level": level,
-                "channels": channels
+                "channels": channels,
             },
             "queryStringParameters": {"gamma": "1"},
             "requestContext": {
-                "authorizer": {
-                    "claims": {
-                        "cognito:username": user_uuid
-                    }
-                }
+                "authorizer": {"claims": {"cognito:username": user_uuid}}
             },
-            "headers": {
-                "Accept": "image/jpeg"
-            }
+            "headers": {"Accept": "image/jpeg"},
         }
         res = self.lambda_client.invoke(
-            FunctionName=self.render_tile_lambda_name,
-            Payload=json.dumps(payload)
+            FunctionName=self.render_tile_lambda_name, Payload=json.dumps(payload)
         )
         data = res["Payload"].read()
         body = json.loads(data)["body"]
