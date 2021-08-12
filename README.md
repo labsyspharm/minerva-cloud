@@ -1,5 +1,7 @@
 <img width="500px" src="./Minerva-Cloud_HorizLogo_RGB.svg" />
 
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 # Minerva Cloud - AWS backend infrastructure
 
 This repository contains the templates necessary to deploy the Minerva Cloud platform in AWS.
@@ -11,7 +13,7 @@ and Serverless Framework configurations for creating various serverless applicat
 [Minerva API](https://labsyspharm.github.io/minerva-cloud/)
 
 ## Prerequisites
-These need to be created manually in AWS console
+These need to be created manually in AWS console or with the AWS CLI:
 - A VPC in the desired AWS region.
 - A pair of public subnets in the VPC.
 - A pair of private subnets with NAT gateways configured in the VPC.
@@ -19,6 +21,15 @@ These need to be created manually in AWS console
 - A security group which allows SSH communication to EC2 instances as required.
 - A yaml configuration file with these and some other properties.
 - A deployment bucket for Serverless Framework.
+
+## Black
+
+The code is formatted using black. This was implemented all-at-once, and for the most useful git blame, we suggest
+you run
+
+```
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
 
 ## AWS Profile
 
