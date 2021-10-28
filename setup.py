@@ -22,6 +22,7 @@ def main():
         entry_points="""
           [console_scripts]
           minerva-cloud=cli:minerva_cloud
+          aws-sudo=serverless.aws_sudo:main
           """,
     )
 
