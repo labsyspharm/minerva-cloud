@@ -1,5 +1,5 @@
 boto3==1.14.44
-numpy==1.18
+numpy==1.22.0
 tifffile==2020.10.1
 imagecodecs==2020.2.18
 redis
